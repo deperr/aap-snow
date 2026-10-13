@@ -40,29 +40,24 @@ later failure as a patching failure.
 
 The note also flags when an instance was left running, because that one costs money.
 
-## Teardown safety
+## Teardown
 
-These instances carry APD's tag set (`managed-by=aap-product-demos`, `apd=true`) so
-APD's inventory and reports see them. **Filtering on those tags would match APD's
-entire cloud stack** — the Windows boxes, the report server, all of it.
-
-So `teardown.yml` always filters on `tag-key: snow_incident`, which only instances this
-demo created carry. `teardown_all=true` drops the name narrowing but *never* that
-filter. Do not relax it.
-
-It is also dry-run by default: without `teardown_confirm=true` it lists what it would
-remove and stops.
+Terminates the instance this run deployed. In a workflow it needs nothing —
+`ec2_instance_id` arrives as an artifact from `provision_ec2.yml`:
 
 ```bash
-# see what exists
-ansible-playbook playbooks/teardown.yml -e teardown_all=true
-
-# remove one
-ansible-playbook playbooks/teardown.yml -e create_vm_vm_name=web-demo-01 -e teardown_confirm=true
-
-# remove everything this demo made
-ansible-playbook playbooks/teardown.yml -e teardown_all=true -e teardown_confirm=true
+# standalone
+ansible-playbook playbooks/teardown.yml -e create_vm_vm_name=web-demo-01
 ```
+
+Terminating by instance id is inherently scoped, so there is no bulk mode and no
+confirmation prompt — it removes one instance, the one you named.
+
+> **If you ever add a bulk mode, do not filter on the APD tags.** These instances carry
+> `managed-by=aap-product-demos` and `apd=true` so APD's inventory and reports see
+> them, which means those tags match **APD's entire cloud stack** — the Windows boxes,
+> the report server, all of it. The name lookup here is additionally scoped with
+> `tag-key: snow_incident`, which only this demo's instances carry.
 
 ## Wiring the failure edges
 

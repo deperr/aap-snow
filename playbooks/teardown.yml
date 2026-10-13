@@ -1,29 +1,14 @@
 ---
 # Phase 5 — docs/mvp/phase-5-failure-and-teardown.md
 #
-# Terminates instances this demo created, so rehearsals do not accumulate cost.
+# Terminates the instance this run deployed.
 #
-# SAFETY — read before changing the filters.
+# In a workflow it needs nothing: ec2_instance_id arrives as an artifact from
+# provision_ec2.yml. Standalone, give it a name instead:
 #
-# These instances carry APD's tag set (managed-by=aap-product-demos, apd=true) so that
-# APD's inventory and reports pick them up. That means filtering on those tags would
-# match APD's ENTIRE cloud stack — the Windows boxes, the report server, everything.
-#
-# So the filter is always `tag-key: snow_incident`, which only instances created by
-# this demo carry. Never relax that.
-#
-# It also will not terminate anything unless teardown_confirm=true. Without it the
-# playbook lists what it would remove and stops.
-#
-# Usage:
-#   list everything this demo created:
-#     -e teardown_all=true
-#   remove one instance:
-#     -e create_vm_vm_name=web-demo-01 -e teardown_confirm=true
-#   remove everything this demo created:
-#     -e teardown_all=true -e teardown_confirm=true
+#   ansible-playbook playbooks/teardown.yml -e create_vm_vm_name=web-demo-01
 
-- name: Tear down demo instances
+- name: Terminate the demo instance
   hosts: localhost
   gather_facts: false
   connection: local
@@ -31,71 +16,48 @@
   vars_files:
     - ../vars/demo.yml
 
-  vars:
-    teardown_all: false
-    teardown_confirm: false
-
   pre_tasks:
-    - name: Require a target
+    - name: Require something to identify the instance
       ansible.builtin.assert:
         that:
-          - (teardown_all | bool) or (create_vm_vm_name | default('', true) | length > 0)
+          - (ec2_instance_id | default('', true) | length > 0)
+            or (create_vm_vm_name | default('', true) | length > 0)
         fail_msg: >-
-          Name a target: either create_vm_vm_name=<instance name>, or
-          teardown_all=true for every instance this demo created.
+          Nothing to terminate. In a workflow ec2_instance_id arrives as an artifact
+          from provision_ec2.yml; standalone, pass create_vm_vm_name.
         quiet: true
 
   tasks:
-    # tag-key matches "has this tag at all, whatever its value". It is the only thing
-    # separating our instances from the rest of the APD stack.
-    - name: Find instances created by this demo
+    # Only needed when running standalone. `tag-key: snow_incident` keeps the lookup to
+    # instances this demo created — the APD tags these also carry would match APD's
+    # whole cloud stack.
+    - name: Look the instance up by name
       amazon.aws.ec2_instance_info:
         region: "{{ create_vm_aws_region }}"
-        filters: >-
-          {{ {'tag-key': 'snow_incident',
-              'instance-state-name': ['pending', 'running', 'stopping', 'stopped']}
-             | combine({} if teardown_all | bool
-                       else {'tag:Name': create_vm_vm_name}) }}
+        filters:
+          "tag:Name": "{{ create_vm_vm_name }}"
+          "tag-key": snow_incident
+          instance-state-name: [pending, running, stopping, stopped]
       register: teardown_found
+      when: ec2_instance_id | default('', true) | length == 0
 
-    - name: Report what matched
+    - name: Settle on the instance id
+      ansible.builtin.set_fact:
+        teardown_ids: >-
+          {{ [ec2_instance_id] if (ec2_instance_id | default('', true) | length > 0)
+             else (teardown_found.instances | default([]) | map(attribute='instance_id') | list) }}
+
+    - name: Report
       ansible.builtin.debug:
         msg: >-
-          {{ teardown_found.instances | length }} instance(s) matched:
-          {{ teardown_found.instances
-             | map(attribute='instance_id') | list | join(', ') | default('none', true) }}
-
-    - name: Show the details
-      ansible.builtin.debug:
-        msg: >-
-          {{ item.instance_id }} | {{ item.tags.Name | default('(no name)') }} |
-          {{ item.state.name }} | ticket {{ item.tags.snow_incident | default('?') }}
-      loop: "{{ teardown_found.instances }}"
-      loop_control:
-        label: "{{ item.instance_id }}"
-
-    - name: Stop here unless explicitly confirmed
-      ansible.builtin.debug:
-        msg: >-
-          DRY RUN — nothing terminated. Re-run with -e teardown_confirm=true to
-          terminate the {{ teardown_found.instances | length }} instance(s) above.
-      when: not (teardown_confirm | bool)
+          {{ ('Terminating: ' + teardown_ids | join(', '))
+             if teardown_ids | length > 0
+             else 'Nothing to terminate — no matching instance is running.' }}
 
     - name: Terminate
       amazon.aws.ec2_instance:
         region: "{{ create_vm_aws_region }}"
-        instance_ids: "{{ teardown_found.instances | map(attribute='instance_id') | list }}"
+        instance_ids: "{{ teardown_ids }}"
         state: absent
         wait: true
-      when:
-        - teardown_confirm | bool
-        - teardown_found.instances | length > 0
-
-    - name: Confirm
-      ansible.builtin.debug:
-        msg: >-
-          Terminated {{ teardown_found.instances | length }} instance(s).
-          Tickets are not touched — close them in ServiceNow if you want a clean board.
-      when:
-        - teardown_confirm | bool
-        - teardown_found.instances | length > 0
+      when: teardown_ids | length > 0
