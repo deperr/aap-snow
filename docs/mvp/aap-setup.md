@@ -491,6 +491,7 @@ closing in both directions.
 | Node 2 creates the instance, then "ServiceNow credentials are not in the environment" | The ServiceNow credential is not attached to `provision-ec2`. It needs both that and AWS. |
 | Workflow won't save: "Variables … are not allowed on launch" | A node's job template has **Variables → Prompt on launch** unticked. Enable it on every template in the workflow. |
 | Node 3: "Permission denied (publickey…)" as a user that is not `ec2-user` | `create_vm_remote_user` is not reaching the play — it defaults to `ec2-user`. The connection itself worked, so the security group is fine; this is auth only. |
+| `sudo: command not found` on a task shown as `host -> localhost` | A play-level `become: true` leaked onto a task delegated to localhost. Execution environments have no sudo. Scope `become` to the tasks that need root. |
 | Node 2: "Required variables not set" | Survey is on the job template instead of the workflow, or the project is stale — re-sync it. |
 | "couldn't resolve module/action amazon.aws…" | The EE on node 2 lacks `amazon.aws` or `boto3`. |
 | "Expected 1 instance named …, got 0" | Subnet or security group **name** does not exist in that region. |

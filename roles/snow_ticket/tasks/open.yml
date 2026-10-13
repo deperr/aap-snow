@@ -46,6 +46,10 @@
   when: not (snow_ticket_adopted | bool)
   delegate_to: "{{ snow_ticket_delegate_host }}"
   run_once: true
+  # Never escalate: this runs on localhost — the execution environment container,
+  # which has no sudo — and a REST call needs no privilege. Without this, a caller
+  # with play-level `become: true` fails with "sudo: command not found".
+  become: false
   environment:
     SN_TIMEOUT: "{{ snow_ticket_timeout }}"
 
@@ -56,6 +60,10 @@
   when: snow_ticket_adopted | bool
   delegate_to: "{{ snow_ticket_delegate_host }}"
   run_once: true
+  # Never escalate: this runs on localhost — the execution environment container,
+  # which has no sudo — and a REST call needs no privilege. Without this, a caller
+  # with play-level `become: true` fails with "sudo: command not found".
+  become: false
   environment:
     SN_TIMEOUT: "{{ snow_ticket_timeout }}"
 

@@ -72,6 +72,11 @@ forget.
 
 `run_once: true` is paired with it so a play against N hosts still writes one note, not N.
 
+`become: false` is set for the same reason. localhost here is the execution environment
+container, which has no `sudo`, and a REST call needs no privilege. A caller that sets
+`become: true` at play level — as a patching play naturally does — would otherwise fail
+these tasks with `sudo: command not found`.
+
 ## Authentication
 
 The modules read `SN_HOST`, `SN_USERNAME`, `SN_PASSWORD` from the environment. In AAP these
