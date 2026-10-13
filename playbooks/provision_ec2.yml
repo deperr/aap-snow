@@ -234,15 +234,16 @@
       vars:
         snow_ticket_note: |
           EC2 instance provisioned.
-            Hostname:      {{ create_vm_vm_name }}
-            Instance ID:   {{ ec2_facts.instance_id }}
-            Instance type: {{ ec2_facts.instance_type }}
-            Region / AZ:   {{ create_vm_aws_region }} / {{ ec2_facts.placement.availability_zone }}
-            AMI:           {{ ec2_facts.image_id }}
-            Blueprint:     {{ vm_blueprint }}
-            Private IP:    {{ ec2_facts.private_ip_address | default('n/a') }}
-            Public IP:     {{ ec2_facts.public_ip_address | default('none') }}
-          Instance tagged with snow_incident={{ snow_number }}.
+          
+          - Hostname:      {{ create_vm_vm_name }}
+          - Instance ID:   {{ ec2_facts.instance_id }}
+          - Instance type: {{ ec2_facts.instance_type }}
+          - Region / AZ:   {{ create_vm_aws_region }} / {{ ec2_facts.placement.availability_zone }}
+          - AMI:           {{ ec2_facts.image_id }}
+          - Blueprint:     {{ vm_blueprint }}
+          - Private IP:    {{ ec2_facts.private_ip_address | default('n/a') }}
+          - Public IP:     {{ ec2_facts.public_ip_address | default('none') }}
+          - Instance tagged with snow_incident={{ snow_number }}.
 
     - name: Summarise
       ansible.builtin.debug:
