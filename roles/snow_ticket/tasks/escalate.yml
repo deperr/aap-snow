@@ -1,0 +1,45 @@
+---
+# Escalates the ticket to a human. Deliberately does NOT change state: the ticket must
+# stay open, because the work did not finish.
+#
+# Required:  snow_ticket_note
+# Required:  snow_ticket_sys_id, or snow_sys_id from a workflow artifact
+# Optional:  snow_ticket_assignment_group, snow_ticket_escalate_urgency/_impact
+
+- name: Check ServiceNow auth
+  ansible.builtin.include_tasks: _assert_auth.yml
+
+- name: Resolve which ticket to escalate
+  ansible.builtin.set_fact:
+    snow_ticket_target_sys_id: >-
+      {{ (snow_ticket_sys_id | default('', true) | string | trim)
+         or (snow_sys_id | default('', true) | string | trim) }}
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - snow_ticket_note | default("", true) | length > 0
+      - snow_ticket_target_sys_id | length > 0
+    fail_msg: >-
+      snow_ticket/escalate requires snow_ticket_note and a ticket sys_id (either
+      snow_ticket_sys_id from this play, or snow_sys_id from a workflow artifact).
+    quiet: true
+
+# assignment_group is only sent when set — an empty one would clear whatever the
+# instance assigned, which is worse than leaving it alone.
+- name: Escalate the ticket  # noqa: args[module]
+  servicenow.itsm.incident:
+    incident_mapping: "{{ snow_ticket_incident_mapping }}"
+    sys_id: "{{ snow_ticket_target_sys_id }}"
+    urgency: "{{ snow_ticket_escalate_urgency }}"
+    impact: "{{ snow_ticket_escalate_impact }}"
+    other: >-
+      {{ {'work_notes': snow_ticket_note}
+         | combine({'assignment_group': snow_ticket_assignment_group}
+                   if (snow_ticket_assignment_group | default('', true) | length > 0)
+                   else {}) }}
+  delegate_to: "{{ snow_ticket_delegate_host }}"
+  run_once: true
+  become: false
+  environment:
+    SN_TIMEOUT: "{{ snow_ticket_timeout }}"

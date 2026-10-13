@@ -4,28 +4,86 @@
 
 **Effort:** ~½ day · **Depends on:** [Phase 4](phase-4-workflow.md)
 
+**Status: implemented** (not yet run)
+
 ## Goal
 
 The demo is not credible until failure is handled, and the repo is not safe to hand over
 until instances get cleaned up. This phase completes the MVP.
 
-## Steps
+## What was built
 
-- Add a `fail_here` extra var that makes `patch-instance` deliberately fail.
-- Wire an **on-failure** edge from each node to `snow-escalate`, which posts the failure
-  summary as a work note, raises `urgency`, reassigns to a human assignment group, and
-  attaches the failed task output with `servicenow.itsm.attachment_upload`. That
-  attachment always gets a reaction from the room.
-- On provisioning failure, decide explicitly: terminate the half-built instance, or tag it
-  `status=quarantine` and leave it for inspection. Say which, in the work note.
-- Add `playbooks/teardown.yml` that terminates anything tagged `managed_by=aap` in the demo
-  VPC, and a `snow-close-ticket` variant that closes the ticket as part of teardown. Run it
-  after every rehearsal.
+| File | Purpose |
+|---|---|
+| [`roles/snow_ticket/tasks/escalate.yml`](../../roles/snow_ticket/tasks/escalate.yml) | The `escalate` action — raises urgency, optionally reassigns, never changes state |
+| [`playbooks/snow_escalate.yml`](../../playbooks/snow_escalate.yml) | The failure terminus |
+| [`playbooks/teardown.yml`](../../playbooks/teardown.yml) | Terminates instances this demo created |
+
+## One escalate node, every failure edge
+
+A workflow node is not told which upstream node failed — but it does receive the
+artifacts of the nodes that *succeeded*. The absence of an artifact is the signal:
+
+| Missing artifact | Reported as |
+|---|---|
+| `ec2_instance_id` | stopped while provisioning the instance |
+| `patch_count` | stopped while patching |
+| `verify_systemd` | stopped while reboot or verification |
+| none | stopped while closing the ticket |
+
+So one node serves all three failure edges, rather than needing a separate node per
+edge carrying its own `extra_data`.
+
+`patch_count` is tested with `is not defined` rather than for emptiness: **0 packages
+is a legitimate result** on a freshly built AMI, and a falsy-check would misreport a
+later failure as a patching failure.
+
+The note also flags when an instance was left running, because that one costs money.
+
+## Teardown safety
+
+These instances carry APD's tag set (`managed-by=aap-product-demos`, `apd=true`) so
+APD's inventory and reports see them. **Filtering on those tags would match APD's
+entire cloud stack** — the Windows boxes, the report server, all of it.
+
+So `teardown.yml` always filters on `tag-key: snow_incident`, which only instances this
+demo created carry. `teardown_all=true` drops the name narrowing but *never* that
+filter. Do not relax it.
+
+It is also dry-run by default: without `teardown_confirm=true` it lists what it would
+remove and stops.
+
+```bash
+# see what exists
+ansible-playbook playbooks/teardown.yml -e teardown_all=true
+
+# remove one
+ansible-playbook playbooks/teardown.yml -e create_vm_vm_name=web-demo-01 -e teardown_confirm=true
+
+# remove everything this demo made
+ansible-playbook playbooks/teardown.yml -e teardown_all=true -e teardown_confirm=true
+```
+
+## Wiring the failure edges
+
+In the visualizer, add an **On Failure** edge from `provision-ec2`, `patch-instance`
+and `reboot-and-verify` to a single `snow-escalate` node. Credentials: ServiceNow only.
+
+Node 1 gets no failure edge — if it fails there is no ticket to escalate onto, and the
+failure is visible in the job output.
+
+## Injecting a failure to demo it
+
+There is no deliberate failure switch; these are more honest and make better demos:
+
+- Point `create_vm_aws_keypair_name` at a keypair that does not exist → node 2 fails
+- Set `create_vm_aws_securitygroup_name` to one without SSH ingress → node 3 fails at
+  the SSH wait, after the instance exists, which is the more interesting story
 
 ## Done when
 
-The failure run leaves an open, escalated, human-assigned ticket containing the error
-text; the success run leaves a resolved one; and teardown reliably zeroes the AWS bill.
+The failure run leaves the ticket **open**, escalated and flagged with how far the run
+got; the success run leaves it **resolved**; and teardown reliably zeroes the AWS bill.
 
 At this point the [MVP success criteria](README.md#success-criteria-for-the-mvp) should
 all be met.
@@ -34,10 +92,13 @@ all be met.
 
 - ServiceNow requires **both** `close_code` and `close_notes` to move an incident to
   resolved/closed. Omitting either returns a validation error the module surfaces as a
-  generic HTTP 400.
+  generic HTTP 400. `snow_ticket/resolve` enforces both.
 - Rehearse the failure run as often as the success run. It is the one that gets questions.
 - Teardown is not optional housekeeping — orphaned instances are the most likely way this
   demo generates an unwelcome invoice.
+- Attaching the failed job's stdout to the ticket would need the controller API and a
+  controller credential, so the note links to the AAP job instead. A worthwhile addition
+  if the audience asks for it.
 
 ---
 

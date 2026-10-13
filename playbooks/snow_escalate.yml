@@ -1,0 +1,78 @@
+---
+# Phase 5 — docs/mvp/phase-5-failure-and-teardown.md
+#
+# The failure terminus. Every on-failure edge in the workflow points here, so the
+# ticket always ends in a defined state: resolved by snow_close_ticket.yml, or open and
+# escalated by this.
+#
+# Required artifact: snow_sys_id
+#
+# A workflow node is not told which upstream node failed, but it does receive the
+# artifacts of the nodes that succeeded. The absence of an artifact is therefore the
+# signal — that is how one escalate node can serve every failure edge, instead of
+# needing a separate node per edge carrying its own extra_data.
+
+- name: Escalate the ticket to a human
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars_files:
+    - ../vars/demo.yml
+
+  pre_tasks:
+    - name: Confirm we know which ticket to escalate
+      ansible.builtin.assert:
+        that:
+          - snow_sys_id | default("", true) | length > 0
+        fail_msg: >-
+          snow_sys_id is missing. If node 1 itself failed there is no ticket to
+          escalate, and the failure is visible in the AAP job output instead. Only
+          wire this node downstream of nodes that run after the ticket exists.
+        quiet: true
+
+  tasks:
+    # patch_count is tested with `is not defined`, not for emptiness: 0 packages is a
+    # legitimate result on a freshly built AMI, and `default('', true)` would treat
+    # that 0 as falsy and misreport a later failure as a patching failure.
+    - name: Work out how far the run got
+      ansible.builtin.set_fact:
+        failed_stage: >-
+          {{ 'provisioning the instance' if (ec2_instance_id | default('', true) | length == 0)
+             else ('patching' if patch_count is not defined
+             else ('reboot or verification' if (verify_systemd | default('', true) | length == 0)
+             else 'closing the ticket')) }}
+
+    - name: Escalate
+      ansible.builtin.include_role:
+        name: snow_ticket
+        tasks_from: escalate
+      vars:
+        snow_ticket_note: |
+          AUTOMATION FAILED — this ticket needs a human.
+
+          The workflow stopped while {{ failed_stage }}.
+          Urgency raised and the ticket left open deliberately; the work did not finish.
+
+          What completed:
+          - Instance: {{ ec2_instance_id | default('NOT CREATED') }}
+          - Address: {{ ec2_public_ip | default('', true) or ec2_private_ip | default('n/a') }}
+          - Packages updated: {{ patch_count | default('did not reach patching') }}
+          - Reboot/verify: {{ verify_systemd | default('did not reach verification') }}
+
+          Request:
+          - Hostname: {{ create_vm_vm_name }}
+          - Blueprint: {{ vm_blueprint }}
+          - Region: {{ create_vm_aws_region }}
+
+          Full output is in AAP job {{ awx_job_id | default('(unknown)') }}.
+          {% if ec2_instance_id | default('', true) | length > 0 %}
+          NOTE: instance {{ ec2_instance_id }} is still running and still costing money.
+          {% endif %}
+
+    - name: Summarise
+      ansible.builtin.debug:
+        msg:
+          - "Ticket {{ snow_number | default(snow_sys_id) }} escalated — left OPEN."
+          - "Stopped while: {{ failed_stage }}"
+          - "Instance left behind: {{ ec2_instance_id | default('none') }}"

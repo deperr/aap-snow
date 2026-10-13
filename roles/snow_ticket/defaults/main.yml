@@ -19,6 +19,12 @@ snow_ticket_timeout: "{{ lookup('env', 'SN_TIMEOUT') | default(60, true) }}"
 # Close code used by `resolve`. Must be a value your instance actually offers.
 snow_ticket_close_code: "Solved (Permanently)"
 
+# Used by `escalate`. The assignment group is only sent when non-empty: an empty value
+# would clear whatever the instance assigned, which is worse than leaving it alone.
+snow_ticket_escalate_urgency: high
+snow_ticket_escalate_impact: medium
+snow_ticket_assignment_group: ""
+
 # The collection ships an older ServiceNow close_code list (Duplicate, Known error,
 # Solution provided, …) than modern instances use, so every resolve logs
 # "Encountered unknown value ... while mapping field close_code". Harmless — unmapped

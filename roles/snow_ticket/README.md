@@ -64,9 +64,21 @@ returning a generic HTTP 400. `snow_ticket_close_code` defaults to
 the collection ships an older list and otherwise logs
 `Encountered unknown value ... while mapping field close_code` on every resolve.
 
-### Not yet implemented
+### `escalate` — hand the ticket to a human
 
-`escalate` lands in [Phase 5](../../docs/mvp/phase-5-failure-and-teardown.md).
+```yaml
+- ansible.builtin.include_role:
+    name: snow_ticket
+    tasks_from: escalate
+  vars:
+    snow_ticket_note: "…"
+```
+
+Raises urgency and impact and posts the note. It deliberately **does not change state**
+— the ticket must stay open, because the work did not finish.
+
+`snow_ticket_assignment_group` is only sent when non-empty: an empty value would clear
+whatever the instance had assigned, which is worse than leaving it alone.
 
 ## Variables
 
