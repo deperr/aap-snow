@@ -294,6 +294,19 @@ Phases 1 and 2 both run `hosts: localhost`.
 
 ## 7. Job templates
 
+> ### Tick "Prompt on launch" for Variables on every template
+>
+> Each job template used as a workflow node must have **Variables → Prompt on launch**
+> enabled. Without it the workflow refuses to save:
+>
+> > Variables create_vm_aws_region, create_vm_vm_name, … are not allowed on launch.
+> > Check the Prompt on Launch setting on the Job Template to include Extra Variables.
+>
+> The workflow survey hands its answers to each node as extra variables at launch, and a
+> template that does not accept extra variables rejects them. This is the same
+> `ask_variables_on_launch` flag [Phase 6](phase-6-servicenow-trigger.md) needs when
+> ServiceNow launches a template over REST.
+
 ### `snow-open-ticket` (Phase 1)
 
 | Field | Value |
@@ -303,7 +316,7 @@ Phases 1 and 2 both run `hosts: localhost`.
 | Inventory | Demo Inventory |
 | Execution Environment | your EE with `servicenow.itsm` |
 | Credentials | `ServiceNow PDI` only |
-| Variables | see below |
+| Variables | **Prompt on launch: ✅** |
 
 Attach the **APD "Cloud | AWS | Create VM" survey** — the variables match exactly, so
 you can copy that survey onto this template rather than writing a new one. Minimum for a
@@ -334,7 +347,7 @@ successfully rather than being cancelled.
 | Inventory | Demo Inventory |
 | Execution Environment | your EE (needs `amazon.aws` + `boto3` too) |
 | Credentials | `ServiceNow PDI` **and** the AWS credential — **both** |
-| Variables | see below |
+| Variables | **Prompt on launch: ✅** |
 
 Same survey as above. The APD cloud stack's defaults work as-is:
 
@@ -467,6 +480,7 @@ closing in both directions.
 |---|---|
 | Node 2: "snow_sys_id and snow_number are missing" | The artifact did not cross. Confirm node 1 succeeded, that the edge is **On Success**, and that nothing sets `snow_sys_id` at launch. |
 | Node 2 creates the instance, then "ServiceNow credentials are not in the environment" | The ServiceNow credential is not attached to `provision-ec2`. It needs both that and AWS. |
+| Workflow won't save: "Variables … are not allowed on launch" | A node's job template has **Variables → Prompt on launch** unticked. Enable it on every template in the workflow. |
 | Node 2: "Required variables not set" | Survey is on the job template instead of the workflow, or the project is stale — re-sync it. |
 | "couldn't resolve module/action amazon.aws…" | The EE on node 2 lacks `amazon.aws` or `boto3`. |
 | "Expected 1 instance named …, got 0" | Subnet or security group **name** does not exist in that region. |
