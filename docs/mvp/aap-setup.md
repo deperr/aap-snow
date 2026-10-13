@@ -169,9 +169,17 @@ env:
   SN_HOST: '{{ SN_HOST }}'
   SN_USERNAME: '{{ SN_USERNAME }}'
   SN_PASSWORD: '{{ SN_PASSWORD }}'
+  SN_TIMEOUT: '60'
 ```
 
 Save. The type is now reusable across every job template.
+
+> **`SN_TIMEOUT` is not optional in practice.** The collection defaults to a **10 second**
+> timeout, and a PDI routinely exceeds that on writes — especially in the first minutes
+> after it wakes from hibernation. The failure looks alarming but is benign:
+> `Unexpected error communicating with ServiceNow instance: The read operation timed out`,
+> with `"timeout": 10.0` in `debug_info`. Setting it here fixes it for every job template
+> at once. Raise it further if your instance is sluggish.
 
 #### Step 2 — create the credential
 

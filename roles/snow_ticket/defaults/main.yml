@@ -11,6 +11,11 @@ snow_ticket_urgency: low
 # node. See roles/snow_ticket/README.md for why this matters.
 snow_ticket_delegate_host: localhost
 
+# The collection defaults to a 10 second timeout, which a Personal Developer Instance
+# routinely exceeds on writes — especially just after waking from hibernation. Honour
+# SN_TIMEOUT if the credential already sets it, otherwise use 60.
+snow_ticket_timeout: "{{ lookup('env', 'SN_TIMEOUT') | default(60, true) }}"
+
 # Note: `snow_sys_id` is deliberately NOT defaulted here. It is a workflow-level
 # artifact shared across nodes, not a role-private variable, so the role reads it with
 # `| default('')` rather than claiming ownership of the name.

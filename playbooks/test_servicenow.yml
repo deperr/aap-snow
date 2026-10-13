@@ -24,7 +24,13 @@
   gather_facts: false
   connection: local
 
+  # A PDI routinely blows through the collection's 10s default on writes, especially
+  # just after waking from hibernation. Honour SN_TIMEOUT if the credential sets it.
+  environment:
+    SN_TIMEOUT: "{{ snow_test_timeout }}"
+
   vars:
+    snow_test_timeout: "{{ lookup('env', 'SN_TIMEOUT') | default(60, true) }}"
     snow_test_caller: admin
     snow_test_resolve: true
     snow_test_delete: false
@@ -174,6 +180,7 @@
               - "Failed task: {{ ansible_failed_task.name | default('unknown') }}"
               - "Error: {{ ansible_failed_result.msg | default('see above') | truncate(300) }}"
               - "---"
+              - "read operation timed out -> instance is slow; raise SN_TIMEOUT (currently {{ snow_test_timeout }}s)"
               - "401 / Unauthorized      -> wrong username or password in the credential"
               - "403 / Forbidden         -> service account is missing the itil role"
               - "Name or service unknown -> SN_HOST wrong, or the PDI is hibernating (log in to wake it)"
