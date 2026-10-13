@@ -58,6 +58,7 @@ Step 6 is what makes it credible. Budget time for it.
 |---|---|
 | [architecture.md](architecture.md) | Workflow diagram, the two mechanics being proved, forward-compatibility decisions, repo layout |
 | [aap-setup.md](aap-setup.md) | UI walkthrough: wiring the repo into the controller and running Phases 1-2 for real |
+| [../demo-runbook.md](../demo-runbook.md) | Presenter script: pre-flight checks, the timed run, the failure run, likely questions |
 
 ### MVP phases
 

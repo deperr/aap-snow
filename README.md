@@ -5,7 +5,8 @@ ticket carrying the real instance facts, patches the instance, and updates and r
 the ticket as it goes.
 
 **Start here: [docs/mvp/](docs/mvp/README.md)** — goal, phased plan, and known risks.
-**Running it in AAP: [docs/mvp/aap-setup.md](docs/mvp/aap-setup.md)**.
+**Building it in AAP: [docs/mvp/aap-setup.md](docs/mvp/aap-setup.md)**.
+**Presenting it: [docs/demo-runbook.md](docs/demo-runbook.md)**.
 
 ## The workflow
 
