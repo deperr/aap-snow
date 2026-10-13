@@ -71,22 +71,17 @@
         quiet: true
 
   tasks:
-    # The survey leaves instance size and image filter blank to mean "use the
-    # blueprint", which is how APD behaves.
-    - name: Apply blueprint defaults where the survey left blanks
+    # The blueprint is the source of truth for image and size. The two optional survey
+    # fields override it when filled in; blank means "use the blueprint", as in APD.
+    - name: Resolve the blueprint
       ansible.builtin.set_fact:
-        create_vm_aws_instance_size: >-
+        ec2_bp: "{{ create_vm_blueprints[vm_blueprint] }}"
+        ec2_size: >-
           {{ create_vm_aws_instance_size | default('', true)
              or create_vm_blueprints[vm_blueprint].instance_size }}
-        create_vm_aws_image_filter: >-
+        ec2_filter: >-
           {{ create_vm_aws_image_filter | default('', true)
              or create_vm_blueprints[vm_blueprint].image_filter }}
-        create_vm_aws_image_architecture: >-
-          {{ create_vm_aws_image_architecture | default('', true)
-             or create_vm_blueprints[vm_blueprint].image_architecture }}
-        create_vm_aws_image_owners: >-
-          {{ create_vm_aws_image_owners | default('', true)
-             or create_vm_blueprints[vm_blueprint].image_owners }}
 
     - name: Get subnet info
       amazon.aws.ec2_vpc_subnet_info:
@@ -115,10 +110,10 @@
     - name: Find ami
       amazon.aws.ec2_ami_info:
         region: "{{ create_vm_aws_region }}"
-        owners: "{{ create_vm_aws_image_owners | default(omit, true) }}"
+        owners: "{{ ec2_bp.image_owners | default(omit, true) }}"
         filters:
-          name: "{{ create_vm_aws_image_filter }}"
-          architecture: "{{ create_vm_aws_image_architecture }}"
+          name: "{{ ec2_filter }}"
+          architecture: "{{ ec2_bp.image_architecture }}"
       register: create_vm_vm_amis
       when: create_vm_aws_instance_ami is not defined
 
@@ -127,25 +122,23 @@
         that:
           - create_vm_vm_amis.images | default([]) | length > 0
         fail_msg: >-
-          No AMI in {{ create_vm_aws_region }} matches filter
-          '{{ create_vm_aws_image_filter }}' (arch {{ create_vm_aws_image_architecture }},
-          owners {{ create_vm_aws_image_owners | default('any', true) }}). Check the
-          blueprint, or pass create_vm_aws_instance_ami directly.
+          No AMI in {{ create_vm_aws_region }} matches the '{{ vm_blueprint }}' blueprint
+          filter '{{ ec2_filter }}' (arch {{ ec2_bp.image_architecture }}, owners
+          {{ ec2_bp.image_owners | default('any', true) }}). Check the blueprint, or
+          pass create_vm_aws_instance_ami directly.
         quiet: true
       when: create_vm_aws_instance_ami is not defined
 
     - name: Save ami
       ansible.builtin.set_fact:
-        create_vm_aws_instance_ami: >-
-          {{ (create_vm_vm_amis.images | selectattr('name', 'defined')
-              | sort(attribute='creation_date'))[-1].image_id }}
+        create_vm_aws_instance_ami: "{{ (create_vm_vm_amis.images | sort(attribute='creation_date') | last).image_id }}"
       when: create_vm_aws_instance_ami is not defined
 
     - name: Create instance
       amazon.aws.ec2_instance:
         name: "{{ create_vm_vm_name }}"
         region: "{{ create_vm_aws_region }}"
-        instance_type: "{{ create_vm_aws_instance_size }}"
+        instance_type: "{{ ec2_size }}"
         image_id: "{{ create_vm_aws_instance_ami | trim }}"
         key_name: "{{ create_vm_aws_keypair_name }}"
         vpc_subnet_id: "{{ create_vm_aws_subnet_id }}"
