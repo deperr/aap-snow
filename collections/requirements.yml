@@ -1,0 +1,13 @@
+---
+# Version floors, not pins. Phase 0 smoke tests tell you what the execution environment
+# actually ships — replace these with exact versions once verified, per the Phase 0 notes.
+collections:
+  - name: servicenow.itsm
+    version: ">=2.5.0"
+
+  # Not used until Phase 2, listed now so the EE is built once.
+  - name: amazon.aws
+    version: ">=7.0.0"
+
+  - name: ansible.posix
+    version: ">=1.5.0"

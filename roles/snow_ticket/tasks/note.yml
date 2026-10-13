@@ -1,0 +1,33 @@
+---
+# Appends a work note to the ticket.
+#
+# Required:  snow_ticket_note
+# Required:  snow_ticket_sys_id, or snow_sys_id from a workflow artifact
+
+# Prefer a sys_id set earlier in this play, else the workflow artifact. The
+# two-argument `default(…, true)` also catches an explicit null — see open.yml.
+- name: Resolve which ticket to annotate
+  ansible.builtin.set_fact:
+    snow_ticket_target_sys_id: >-
+      {{ (snow_ticket_sys_id | default('', true) | string | trim)
+         or (snow_sys_id | default('', true) | string | trim) }}
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - snow_ticket_note | default("", true) | length > 0
+      - snow_ticket_target_sys_id | length > 0
+    fail_msg: >-
+      snow_ticket/note requires snow_ticket_note and a ticket sys_id (either
+      snow_ticket_sys_id from this play, or snow_sys_id from a workflow artifact).
+    quiet: true
+
+# noqa: args[module] — `host` is satisfied at runtime by the SN_HOST env fallback,
+# which ansible-lint cannot see in the static argspec.
+- name: Append work note  # noqa: args[module]
+  servicenow.itsm.incident:
+    sys_id: "{{ snow_ticket_target_sys_id }}"
+    other:
+      work_notes: "{{ snow_ticket_note }}"
+  delegate_to: "{{ snow_ticket_delegate_host }}"
+  run_once: true

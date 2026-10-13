@@ -1,0 +1,9 @@
+---
+# This role has no default action on purpose — every caller must name one, so that
+# grepping for `tasks_from:` finds every place the ticket is touched.
+- name: Refuse to run without an explicit action
+  ansible.builtin.fail:
+    msg: >-
+      The snow_ticket role must be invoked with an explicit action, e.g.
+      `include_role: {name: snow_ticket, tasks_from: note}`.
+      Available actions: open, note.

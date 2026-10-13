@@ -1,0 +1,138 @@
+---
+# Phase 2 — docs/mvp/phase-2-provision-ec2.md
+#
+# Launches the EC2 instance, tags it with the ticket number, and writes the *actual*
+# instance facts back to the ticket.
+#
+# Required extra vars: ec2_name, ec2_instance_type, ec2_region,
+#                      ec2_key_name, ec2_subnet_id, ec2_security_group
+# Required artifacts:  snow_sys_id, snow_number  (from Phase 1)
+# Optional extra vars: ec2_ami_id (pin an AMI instead of resolving the latest), ec2_env
+
+- name: Provision the EC2 instance
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars_files:
+    - ../vars/demo.yml
+
+  pre_tasks:
+    - name: Validate the request
+      ansible.builtin.assert:
+        that:
+          - ec2_name | default("", true) | length > 0
+          - ec2_instance_type | default("", true) | length > 0
+          - ec2_region | default("", true) | length > 0
+          - ec2_key_name | default("", true) | length > 0
+          - ec2_subnet_id | default("", true) | length > 0
+          - ec2_security_group | default("", true) | length > 0
+        fail_msg: >-
+          This playbook needs ec2_name, ec2_instance_type, ec2_region, ec2_key_name,
+          ec2_subnet_id and ec2_security_group.
+        quiet: true
+
+    - name: Confirm the Phase 1 ticket artifacts arrived
+      ansible.builtin.assert:
+        that:
+          - snow_sys_id | default("", true) | length > 0
+          - snow_number | default("", true) | length > 0
+        fail_msg: >-
+          snow_sys_id and snow_number are missing. They are published by
+          playbooks/snow_open_ticket.yml as workflow artifacts; this playbook is not
+          meant to run before it.
+        quiet: true
+
+  tasks:
+    - name: Resolve the latest AMI
+      ansible.builtin.set_fact:
+        ec2_resolved_ami: >-
+          {{ lookup('amazon.aws.ssm_parameter', ec2_ami_ssm_parameter,
+                    region=ec2_region) }}
+      when: ec2_ami_id | default("", true) | length == 0
+
+    - name: Use the pinned AMI instead
+      ansible.builtin.set_fact:
+        ec2_resolved_ami: "{{ ec2_ami_id }}"
+      when: ec2_ami_id | default("", true) | length > 0
+
+    - name: Launch instance
+      amazon.aws.ec2_instance:
+        name: "{{ ec2_name }}"
+        region: "{{ ec2_region }}"
+        instance_type: "{{ ec2_instance_type }}"
+        image_id: "{{ ec2_resolved_ami }}"
+        key_name: "{{ ec2_key_name }}"
+        vpc_subnet_id: "{{ ec2_subnet_id }}"
+        security_group: "{{ ec2_security_group }}"
+        # `started`, not `running`: it additionally waits for EC2 status checks to pass,
+        # which is a far better handoff to the SSH wait in Phase 3.
+        state: started
+        wait: true
+        wait_timeout: "{{ ec2_wait_timeout }}"
+        tags:
+          Name: "{{ ec2_name }}"
+          snow_incident: "{{ snow_number }}"   # the instance carries its own ticket no.
+          managed_by: aap                      # teardown.yml keys off this (Phase 5)
+          environment: "{{ ec2_env }}"
+      register: ec2
+
+    - name: Confirm exactly one instance matched
+      ansible.builtin.assert:
+        that:
+          - ec2.instances | default([]) | length == 1
+        fail_msg: >-
+          Expected 1 instance named '{{ ec2_name }}', got
+          {{ ec2.instances | default([]) | length }}. A previous run may have left one
+          behind — see the idempotency note in docs/mvp/phase-2-provision-ec2.md.
+        quiet: true
+
+    - name: Shorthand for the instance facts
+      ansible.builtin.set_fact:
+        ec2_facts: "{{ ec2.instances[0] }}"
+
+    - name: Publish instance facts to downstream nodes
+      ansible.builtin.set_stats:
+        data:
+          ec2_instance_id: "{{ ec2_facts.instance_id }}"
+          ec2_private_ip: "{{ ec2_facts.private_ip_address | default('') }}"
+          ec2_public_ip: "{{ ec2_facts.public_ip_address | default('') }}"
+          ec2_az: "{{ ec2_facts.placement.availability_zone }}"
+          ec2_ami: "{{ ec2_facts.image_id }}"
+        per_host: false
+
+    # Decision 3: assembled now, consumed in Phase 7. See docs/mvp/architecture.md.
+    - name: Publish CMDB-shaped facts (nothing consumes these yet)
+      ansible.builtin.set_stats:
+        data:
+          ci_payload:
+            name: "{{ ec2_name }}"
+            ip_address: "{{ ec2_facts.private_ip_address | default('') }}"
+            object_id: "{{ ec2_facts.instance_id }}"
+            cpu_count: "{{ ec2_facts.cpu_options.core_count | default('') }}"
+            environment: "{{ ec2_env }}"
+            os: Linux
+        per_host: false
+
+    - name: Record instance details on the ticket
+      ansible.builtin.include_role:
+        name: snow_ticket
+        tasks_from: note
+      vars:
+        snow_ticket_note: |
+          EC2 instance provisioned.
+            Hostname:      {{ ec2_name }}
+            Instance ID:   {{ ec2_facts.instance_id }}
+            Instance type: {{ ec2_facts.instance_type }}
+            Region / AZ:   {{ ec2_region }} / {{ ec2_facts.placement.availability_zone }}
+            AMI:           {{ ec2_facts.image_id }}
+            Private IP:    {{ ec2_facts.private_ip_address | default('n/a') }}
+            Public IP:     {{ ec2_facts.public_ip_address | default('none') }}
+          Instance tagged with snow_incident={{ snow_number }}.
+
+    - name: Summarise
+      ansible.builtin.debug:
+        msg:
+          - "Instance:  {{ ec2_facts.instance_id }} ({{ ec2_facts.instance_type }})"
+          - "Private IP: {{ ec2_facts.private_ip_address | default('n/a') }}"
+          - "Ticket:    {{ snow_number }} updated with instance facts"

@@ -1,0 +1,61 @@
+---
+# Phase 1 — docs/mvp/phase-1-open-ticket.md
+#
+# Opens the ServiceNow ticket for an EC2 provisioning run and publishes its identity as
+# a workflow artifact. Every downstream node reads snow_sys_id from that artifact.
+#
+# Required extra vars: ec2_name, ec2_instance_type, ec2_region
+# Optional extra vars: ec2_env, snow_ticket_caller, snow_sys_id
+
+- name: Open the provisioning ticket
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars_files:
+    - ../vars/demo.yml
+
+  pre_tasks:
+    - name: Validate the request
+      ansible.builtin.assert:
+        that:
+          - ec2_name | default("") | length > 0
+          - ec2_instance_type | default("") | length > 0
+          - ec2_region | default("") | length > 0
+        fail_msg: >-
+          This playbook needs ec2_name, ec2_instance_type and ec2_region. In AAP these
+          come from the workflow survey; locally pass them with -e.
+        quiet: true
+
+  tasks:
+    - name: Open (or adopt) the ticket
+      ansible.builtin.include_role:
+        name: snow_ticket
+        tasks_from: open
+      vars:
+        snow_ticket_short_description: "Provision & patch EC2 instance: {{ ec2_name }}"
+        snow_ticket_description: |
+          Requested via Ansible Automation Platform.
+            Hostname:      {{ ec2_name }}
+            Instance type: {{ ec2_instance_type }}
+            Region:        {{ ec2_region }}
+            Environment:   {{ ec2_env }}
+            AAP job:       {{ awx_job_id | default('local run') }}
+        snow_ticket_opening_note: >-
+          Request received. Provisioning started by AAP job
+          {{ awx_job_id | default('local run') }}.
+
+    - name: Publish ticket identity to downstream workflow nodes
+      ansible.builtin.set_stats:
+        data:
+          snow_sys_id: "{{ snow_ticket_sys_id }}"
+          snow_number: "{{ snow_ticket_number }}"
+        per_host: false
+
+    - name: Summarise
+      ansible.builtin.debug:
+        msg:
+          - "Ticket:     {{ snow_ticket_number }}"
+          - "sys_id:     {{ snow_ticket_sys_id }}"
+          - "Instance:   {{ ec2_name }} ({{ ec2_instance_type }}, {{ ec2_region }})"
+          - "Artifacts published — downstream nodes will read snow_sys_id."

@@ -1,0 +1,8 @@
+# Collections installed from collections/requirements.yml
+collections/ansible_collections/
+
+# Local-only credentials. Never commit these — AAP injects them as env vars.
+.env
+*.retry
+__pycache__/
+.DS_Store

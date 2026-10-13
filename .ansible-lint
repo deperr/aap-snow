@@ -1,0 +1,4 @@
+---
+exclude_paths:
+  - collections/ansible_collections/   # installed dependencies, not our code
+  - .github/

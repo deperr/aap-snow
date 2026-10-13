@@ -1,0 +1,15 @@
+---
+# Shared demo defaults. Play-level vars, so AAP survey answers and `-e` both override
+# them. Anything a presenter might want to change should live here, not inline.
+
+ec2_env: demo
+
+# Latest Amazon Linux 2023 AMI, resolved per-region at run time. Never hard-code an AMI
+# id — they are region-specific and go stale.
+ec2_ami_ssm_parameter: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+# How long to wait for the instance to pass EC2 status checks.
+ec2_wait_timeout: 600
+
+# Login user for the AMI above. RHEL images also use ec2-user; Ubuntu would be 'ubuntu'.
+ec2_remote_user: ec2-user

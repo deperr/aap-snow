@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  role_name: snow_ticket
+  author: Dennis Perrone
+  description: Create and update ServiceNow tickets from AAP automation.
+  license: MIT
+  min_ansible_version: "2.14"
+  galaxy_tags:
+    - servicenow
+    - itsm
+
+collections:
+  - servicenow.itsm
+
+dependencies: []

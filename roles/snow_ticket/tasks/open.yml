@@ -1,0 +1,79 @@
+---
+# Creates the ticket, or adopts one whose sys_id was handed in.
+#
+# Required:  snow_ticket_short_description, snow_ticket_description
+# Optional:  snow_sys_id (adopt instead of create)
+# Sets:      snow_ticket_sys_id, snow_ticket_number
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - snow_ticket_short_description | default("") | length > 0
+      - snow_ticket_description | default("") | length > 0
+    fail_msg: >-
+      snow_ticket/open requires snow_ticket_short_description and
+      snow_ticket_description.
+    quiet: true
+
+# `default('', true)` rather than `default('')` on purpose: the two-argument form also
+# replaces an explicit null, which is what AAP sends when an extra var is declared with
+# no value. Plain `default('')` only catches *undefined* and would leave the literal
+# string "None" here.
+- name: Normalise the inbound ticket id
+  ansible.builtin.set_fact:
+    snow_ticket_inbound_sys_id: "{{ snow_sys_id | default('', true) | string | trim }}"
+
+- name: Decide whether to adopt an existing ticket
+  ansible.builtin.set_fact:
+    snow_ticket_adopted: "{{ (snow_ticket_inbound_sys_id | length) > 0 }}"
+
+# noqa: args[module] on the two tasks below — `host` is satisfied at runtime by the
+# SN_HOST env fallback, which ansible-lint cannot see in the static argspec.
+- name: Create the incident  # noqa: args[module]
+  servicenow.itsm.incident:
+    state: in_progress
+    caller: "{{ snow_ticket_caller }}"
+    short_description: "{{ snow_ticket_short_description }}"
+    description: "{{ snow_ticket_description }}"
+    impact: "{{ snow_ticket_impact }}"
+    urgency: "{{ snow_ticket_urgency }}"
+    other:
+      work_notes: "{{ snow_ticket_opening_note | default('Opened by Ansible Automation Platform.') }}"
+  register: snow_ticket_created
+  when: not (snow_ticket_adopted | bool)
+  delegate_to: "{{ snow_ticket_delegate_host }}"
+  run_once: true
+
+- name: Look up the adopted ticket  # noqa: args[module]
+  servicenow.itsm.incident_info:
+    sys_id: "{{ snow_ticket_inbound_sys_id }}"
+  register: snow_ticket_lookup
+  when: snow_ticket_adopted | bool
+  delegate_to: "{{ snow_ticket_delegate_host }}"
+  run_once: true
+
+- name: Confirm the adopted ticket exists
+  ansible.builtin.assert:
+    that:
+      - snow_ticket_lookup.records | default([]) | length == 1
+    fail_msg: >-
+      snow_sys_id '{{ snow_ticket_inbound_sys_id }}' matched
+      {{ snow_ticket_lookup.records | default([]) | length }} incidents — expected
+      exactly 1.
+    quiet: true
+  when: snow_ticket_adopted | bool
+
+- name: Record the effective ticket identity
+  ansible.builtin.set_fact:
+    snow_ticket_sys_id: >-
+      {{ snow_ticket_inbound_sys_id if snow_ticket_adopted | bool
+         else snow_ticket_created.record.sys_id }}
+    snow_ticket_number: >-
+      {{ snow_ticket_lookup.records[0].number if snow_ticket_adopted | bool
+         else snow_ticket_created.record.number }}
+
+- name: Report the ticket
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Adopted' if snow_ticket_adopted | bool else 'Created' }} ticket
+      {{ snow_ticket_number }} ({{ snow_ticket_sys_id }})
