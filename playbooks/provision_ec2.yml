@@ -145,21 +145,28 @@
           '{{ ec2_filter }}' from owner {{ ec2_bp.image_owners }}.
       when: create_vm_aws_instance_ami is not defined
 
-    - name: Confirm the image filter matched something
+    - name: Confirm the image filter matched something sortable
       ansible.builtin.assert:
         that:
-          - create_vm_vm_amis.images | default([]) | length > 0
+          - create_vm_vm_amis.images | default([]) | selectattr('creation_date', 'defined') | list | length > 0
         fail_msg: >-
-          No AMI in {{ create_vm_aws_region }} matches the '{{ vm_blueprint }}' blueprint
-          filter '{{ ec2_filter }}' (arch {{ ec2_bp.image_architecture }}, owners
-          {{ ec2_bp.image_owners | default('any', true) }}). Check the blueprint, or
-          pass create_vm_aws_instance_ami directly.
+          No usable AMI in {{ create_vm_aws_region }} for the '{{ vm_blueprint }}'
+          blueprint: filter '{{ ec2_filter }}' (arch {{ ec2_bp.image_architecture }},
+          owners {{ ec2_bp.image_owners }}) returned
+          {{ create_vm_vm_amis.images | default([]) | length }} image(s), of which
+          0 have a creation_date. Check the blueprint, or pass
+          create_vm_aws_instance_ami directly to skip this lookup.
         quiet: true
       when: create_vm_aws_instance_ami is not defined
 
+    # selectattr is not optional: a single AMI without a creation_date makes
+    # sort(attribute='creation_date') fail for the whole list, and the resulting
+    # "Error while resolving value" says nothing about which image caused it.
     - name: Save ami
       ansible.builtin.set_fact:
-        create_vm_aws_instance_ami: "{{ (create_vm_vm_amis.images | sort(attribute='creation_date') | last).image_id }}"
+        create_vm_aws_instance_ami: >-
+          {{ (create_vm_vm_amis.images | selectattr('creation_date', 'defined')
+              | sort(attribute='creation_date') | last).image_id }}
       when: create_vm_aws_instance_ami is not defined
 
     - name: Create instance
