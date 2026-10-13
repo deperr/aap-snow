@@ -83,6 +83,17 @@
           {{ create_vm_aws_image_filter | default('', true)
              or create_vm_blueprints[vm_blueprint].image_filter }}
 
+    - name: Confirm the blueprint constrains the image search by owner
+      ansible.builtin.assert:
+        that:
+          - ec2_bp.image_owners | default('', true) | length > 0
+        fail_msg: >-
+          Blueprint '{{ vm_blueprint }}' has no image_owners. An unowned AMI search
+          returns every public image matching the name across all AWS accounts, which
+          makes the sort crawl. Set image_owners in vars/demo.yml — an account id, or
+          the alias 'amazon'.
+        quiet: true
+
     - name: Get subnet info
       amazon.aws.ec2_vpc_subnet_info:
         region: "{{ create_vm_aws_region }}"
@@ -107,14 +118,31 @@
         create_vm_aws_subnet_id: "{{ create_vm_aws_subnet.subnets | map(attribute='id') | list | last }}"
       when: create_vm_aws_subnet_id is not defined
 
+    # This task returns thousands of images — Red Hat alone publishes well over a
+    # thousand RHEL-9 AMIs per region. The Jinja sort below handles that fine (30k
+    # images sort in ~7s), but AAP has to serialise the whole result into its job-event
+    # stream, and a 20MB+ event can stall the job for minutes. It looks like a hang on
+    # the *next* task, because that task's header has already printed.
+    #
+    # `no_log` keeps the payload out of the event stream; `register` still captures it.
+    # The debug task below restores the one fact worth seeing.
     - name: Find ami
       amazon.aws.ec2_ami_info:
         region: "{{ create_vm_aws_region }}"
-        owners: "{{ ec2_bp.image_owners | default(omit, true) }}"
+        owners: "{{ ec2_bp.image_owners }}"
         filters:
           name: "{{ ec2_filter }}"
           architecture: "{{ ec2_bp.image_architecture }}"
+          state: available
       register: create_vm_vm_amis
+      no_log: true
+      when: create_vm_aws_instance_ami is not defined
+
+    - name: Report how many images matched
+      ansible.builtin.debug:
+        msg: >-
+          {{ create_vm_vm_amis.images | default([]) | length }} image(s) matched
+          '{{ ec2_filter }}' from owner {{ ec2_bp.image_owners }}.
       when: create_vm_aws_instance_ami is not defined
 
     - name: Confirm the image filter matched something

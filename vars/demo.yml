@@ -31,7 +31,11 @@ create_vm_blueprints:
     instance_size: t3.medium
     image_architecture: x86_64
     image_filter: 'al2023-ami-2023*'
-    image_owners: ''
+    # APD's al2023 blueprint leaves owners unset. Without it ec2_ami_info returns every
+    # public AMI matching the name from every account that has published one, which is
+    # tens of thousands of records — slow to fetch and very slow to sort in Jinja.
+    # 'amazon' is an AWS owner alias, so it works in any region.
+    image_owners: amazon
   rhel9:
     instance_size: t3.medium
     image_architecture: x86_64
