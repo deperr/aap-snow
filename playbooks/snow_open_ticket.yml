@@ -34,14 +34,6 @@
         quiet: true
 
   tasks:
-    # Instance size is optional in the survey — blank means "use the blueprint", so
-    # resolve it here too rather than writing an empty field onto the ticket.
-    - name: Resolve the instance size for the ticket text
-      ansible.builtin.set_fact:
-        snow_ticket_instance_size: >-
-          {{ create_vm_aws_instance_size | default('', true)
-             or create_vm_blueprints[vm_blueprint].instance_size | default('(from blueprint)') }}
-
     - name: Open (or adopt) the ticket
       ansible.builtin.include_role:
         name: snow_ticket
@@ -52,7 +44,7 @@
           Requested via Ansible Automation Platform.
             Hostname:      {{ create_vm_vm_name }}
             Blueprint:     {{ vm_blueprint }}
-            Instance type: {{ snow_ticket_instance_size }}
+            Instance type: {{ create_vm_aws_instance_size }}
             Region:        {{ create_vm_aws_region }}
             Environment:   {{ create_vm_vm_environment }}
             Owner:         {{ create_vm_vm_owner }}
@@ -75,5 +67,5 @@
         msg:
           - "Ticket:    {{ snow_ticket_number }}"
           - "sys_id:    {{ snow_ticket_sys_id }}"
-          - "Instance:  {{ create_vm_vm_name }} ({{ snow_ticket_instance_size }}, {{ create_vm_aws_region }})"
+          - "Instance:  {{ create_vm_vm_name }} ({{ create_vm_aws_instance_size }}, {{ create_vm_aws_region }})"
           - "Artifacts published — downstream nodes will read snow_sys_id."

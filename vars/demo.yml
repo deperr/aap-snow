@@ -1,62 +1,42 @@
 ---
 # Defaults for the EC2 playbooks. Variable names match the Ansible Product Demos
-# "Cloud | AWS | Create VM" survey, so the same survey drives these templates.
-# Play-level vars, so survey answers and `-e` both override them.
+# "Cloud | AWS | Create VM" survey, so that survey drives these templates unchanged.
+# These are play-level vars, so survey answers and `-e` both override them.
 
-# Survey defaults, identical to the APD "Cloud | AWS | Create VM" survey, so a partial
-# survey (or a bare `-e` run) still works. Anything the survey sends overrides these.
-create_vm_vm_purpose: demo
-create_vm_vm_environment: Dev
-create_vm_vm_deployment: default
-create_vm_vm_owner: ansible
+#######
+# IMAGE AND SIZE — RHEL 9
+#######
+# The survey's optional "AWS Instance Type" and "AWS Image Filter" questions override
+# these per run. Owners is quoted: unquoted it parses as an int, and the module's
+# `owners` parameter expects strings.
+create_vm_aws_image_owners: '309956199498'
+create_vm_aws_instance_size: t3.medium
+create_vm_aws_image_architecture: x86_64
+create_vm_aws_image_filter: 'RHEL-9*HVM-*Hourly*'
+
+#######
+# PLACEMENT — resources created by the APD cloud stack. Names, not ids.
+#######
 create_vm_aws_region: us-east-2
-
-# Resources created by the APD cloud stack. These are *names*, not ids.
 create_vm_aws_vpc_subnet_name: aws-test-subnet
 create_vm_aws_securitygroup_name: aws-test-sg
 create_vm_aws_keypair_name: aws-test-key
 
-# Deliberately NOT defaulted — these must be a conscious choice every run:
-#   create_vm_vm_name   (every instance would otherwise be called the same thing)
-#   vm_blueprint        (picks the OS, and therefore whether Phase 3 can patch it)
+#######
+# TAGS AND METADATA — same values APD uses
+#######
+vm_blueprint: rhel9
+create_vm_vm_purpose: demo
+create_vm_vm_environment: Dev
+create_vm_vm_deployment: default
+create_vm_vm_owner: ansible
 
 # How long to wait for the instance to pass EC2 status checks.
 create_vm_aws_wait_timeout: 600
 
-# Blueprint values, copied from APD cloud/blueprints/*.yml. The survey's
-# "AWS Instance Type" and "AWS Image Filter" are optional and fall back to these.
-# Windows blueprints are intentionally absent — Phase 3 patches with dnf.
-create_vm_blueprints:
-  al2023:
-    instance_size: t3.medium
-    image_architecture: x86_64
-    image_filter: 'al2023-ami-2023*'
-    # APD's al2023 blueprint leaves owners unset. Without it ec2_ami_info returns every
-    # public AMI matching the name from every account that has published one, which is
-    # tens of thousands of records — slow to fetch and very slow to sort in Jinja.
-    # 'amazon' is an AWS owner alias, so it works in any region.
-    image_owners: amazon
-  rhel9:
-    instance_size: t3.medium
-    image_architecture: x86_64
-    image_filter: 'RHEL-9*HVM-*Hourly*'
-    image_owners: '309956199498'
-  rhel8:
-    instance_size: t3.medium
-    image_architecture: x86_64
-    image_filter: 'RHEL-8*HVM-*Hourly*'
-    image_owners: '309956199498'
-  rhel7:
-    instance_size: t3.medium
-    image_architecture: x86_64
-    image_filter: 'RHEL-7.9_HVM*'
-    image_owners: '309956199498'
-  kafka:
-    instance_size: t3.medium
-    image_architecture: x86_64
-    image_filter: 'RHEL-9*HVM-*Hourly*'
-    image_owners: '309956199498'
-
+# Deliberately NOT defaulted — every instance would otherwise share a name:
+#   create_vm_vm_name
+#
 # NOTE: no SSH user here on purpose. The AAP **Machine credential** supplies the login
 # user and private key; setting `ansible_user` anywhere in this repo would override it
 # and defeat the credential. See docs/mvp/aap-setup.md § credential model.

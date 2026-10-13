@@ -17,8 +17,8 @@
 #   create_vm_aws_vpc_subnet_name     Subnet                  (name, not id)
 #   create_vm_aws_securitygroup_name  Security Group          (name, not id)
 #   create_vm_aws_keypair_name        SSH Keypair             (required)
-#   create_vm_aws_instance_size       AWS Instance Type       (blank -> blueprint)
-#   create_vm_aws_image_filter        AWS Image Filter        (blank -> blueprint)
+#   create_vm_aws_instance_size       AWS Instance Type       (default: t3.medium)
+#   create_vm_aws_image_filter        AWS Image Filter        (default: RHEL 9)
 #
 # Also required, from Phase 1's artifacts: snow_sys_id, snow_number.
 
@@ -58,42 +58,30 @@
           meant to run before it.
         quiet: true
 
-    # The survey offers windows_core / windows_full / rhel7, but Phase 3 patches with
-    # ansible.builtin.dnf. Fail here with an explanation rather than provisioning
-    # successfully and collapsing two nodes later.
+    # The defaults provision RHEL 9, and Phase 3 patches with ansible.builtin.dnf.
+    # The APD survey still offers windows_core / windows_full, so catch that here
+    # rather than tagging a RHEL box as Windows and failing two nodes later.
     - name: Reject blueprints this demo cannot patch
       ansible.builtin.assert:
         that:
-          - vm_blueprint in create_vm_blueprints
+          - "'windows' not in (vm_blueprint | default('') | lower)"
         fail_msg: >-
-          Blueprint '{{ vm_blueprint }}' is not supported here. Phase 3 patches with
-          dnf, so pick one of: {{ create_vm_blueprints.keys() | list | join(', ') }}.
+          Blueprint '{{ vm_blueprint }}' is not supported here. These playbooks
+          provision RHEL-family images and Phase 3 patches with dnf.
+        quiet: true
+
+    # An unowned AMI search returns every public image matching the name across all
+    # AWS accounts — slow to fetch and slow to sort.
+    - name: Confirm the image search is constrained by owner
+      ansible.builtin.assert:
+        that:
+          - create_vm_aws_image_owners | default('', true) | length > 0
+        fail_msg: >-
+          create_vm_aws_image_owners is empty. Set an account id, or the alias
+          'amazon' for Amazon-published images.
         quiet: true
 
   tasks:
-    # The blueprint is the source of truth for image and size. The two optional survey
-    # fields override it when filled in; blank means "use the blueprint", as in APD.
-    - name: Resolve the blueprint
-      ansible.builtin.set_fact:
-        ec2_bp: "{{ create_vm_blueprints[vm_blueprint] }}"
-        ec2_size: >-
-          {{ create_vm_aws_instance_size | default('', true)
-             or create_vm_blueprints[vm_blueprint].instance_size }}
-        ec2_filter: >-
-          {{ create_vm_aws_image_filter | default('', true)
-             or create_vm_blueprints[vm_blueprint].image_filter }}
-
-    - name: Confirm the blueprint constrains the image search by owner
-      ansible.builtin.assert:
-        that:
-          - ec2_bp.image_owners | default('', true) | length > 0
-        fail_msg: >-
-          Blueprint '{{ vm_blueprint }}' has no image_owners. An unowned AMI search
-          returns every public image matching the name across all AWS accounts, which
-          makes the sort crawl. Set image_owners in vars/demo.yml — an account id, or
-          the alias 'amazon'.
-        quiet: true
-
     - name: Get subnet info
       amazon.aws.ec2_vpc_subnet_info:
         region: "{{ create_vm_aws_region }}"
@@ -129,10 +117,10 @@
     - name: Find ami
       amazon.aws.ec2_ami_info:
         region: "{{ create_vm_aws_region }}"
-        owners: "{{ ec2_bp.image_owners }}"
+        owners: "{{ create_vm_aws_image_owners }}"
         filters:
-          name: "{{ ec2_filter }}"
-          architecture: "{{ ec2_bp.image_architecture }}"
+          name: "{{ create_vm_aws_image_filter }}"
+          architecture: "{{ create_vm_aws_image_architecture }}"
           state: available
       register: create_vm_vm_amis
       no_log: true
@@ -142,7 +130,7 @@
       ansible.builtin.debug:
         msg: >-
           {{ create_vm_vm_amis.images | default([]) | length }} image(s) matched
-          '{{ ec2_filter }}' from owner {{ ec2_bp.image_owners }}.
+          '{{ create_vm_aws_image_filter }}' from owner {{ create_vm_aws_image_owners }}.
       when: create_vm_aws_instance_ami is not defined
 
     - name: Confirm the image filter matched something sortable
@@ -150,9 +138,10 @@
         that:
           - create_vm_vm_amis.images | default([]) | selectattr('creation_date', 'defined') | list | length > 0
         fail_msg: >-
-          No usable AMI in {{ create_vm_aws_region }} for the '{{ vm_blueprint }}'
-          blueprint: filter '{{ ec2_filter }}' (arch {{ ec2_bp.image_architecture }},
-          owners {{ ec2_bp.image_owners }}) returned
+          No usable AMI in {{ create_vm_aws_region }}: filter
+          '{{ create_vm_aws_image_filter }}' (arch
+          {{ create_vm_aws_image_architecture }}, owners
+          {{ create_vm_aws_image_owners }}) returned
           {{ create_vm_vm_amis.images | default([]) | length }} image(s), of which
           0 have a creation_date. Check the blueprint, or pass
           create_vm_aws_instance_ami directly to skip this lookup.
@@ -173,7 +162,7 @@
       amazon.aws.ec2_instance:
         name: "{{ create_vm_vm_name }}"
         region: "{{ create_vm_aws_region }}"
-        instance_type: "{{ ec2_size }}"
+        instance_type: "{{ create_vm_aws_instance_size }}"
         image_id: "{{ create_vm_aws_instance_ami | trim }}"
         key_name: "{{ create_vm_aws_keypair_name }}"
         vpc_subnet_id: "{{ create_vm_aws_subnet_id }}"

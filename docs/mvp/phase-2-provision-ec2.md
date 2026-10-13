@@ -34,8 +34,8 @@ can be attached to this job template unchanged. All twelve questions:
 | Subnet | `create_vm_aws_vpc_subnet_name` | a **name**, looked up to an id |
 | Security Group | `create_vm_aws_securitygroup_name` | a **name** |
 | SSH Keypair | `create_vm_aws_keypair_name` | required |
-| AWS Instance Type | `create_vm_aws_instance_size` | blank → blueprint |
-| AWS Image Filter | `create_vm_aws_image_filter` | blank → blueprint |
+| AWS Instance Type | `create_vm_aws_instance_size` | default `t3.medium` |
+| AWS Image Filter | `create_vm_aws_image_filter` | default `RHEL-9*HVM-*Hourly*` |
 
 AMI discovery uses `ec2_ami_info` filtered by name/owner/architecture and sorted by
 `creation_date`, as APD does — not an SSM lookup, which would ignore the survey's image
@@ -48,11 +48,25 @@ report and teardown all see these instances.
 `set_stats` publishes APD's `priv_network_private_ip` and `public_ip` alongside this
 repo's `ec2_*` artifacts.
 
-**Blueprints** live in [`vars/demo.yml`](../../vars/demo.yml) as a small table rather than
-copies of APD's blueprint files — only the four AWS fields matter here, and APD's files
-carry Azure variables too. Windows blueprints are deliberately absent: Phase 3 patches
-with `dnf`, so the playbook rejects them up front rather than provisioning successfully
-and collapsing two nodes later.
+**Image and size are flat defaults** in [`vars/demo.yml`](../../vars/demo.yml), not a
+blueprint lookup table:
+
+```yaml
+create_vm_aws_image_owners: '309956199498'   # Red Hat
+create_vm_aws_instance_size: t3.medium
+create_vm_aws_image_architecture: x86_64
+create_vm_aws_image_filter: 'RHEL-9*HVM-*Hourly*'
+```
+
+Everything provisions RHEL 9 unless the survey overrides the size or filter.
+`vm_blueprint` is now only a tag. The playbook still rejects Windows blueprints up
+front, since Phase 3 patches with `dnf` and a RHEL box tagged `windows_full` would be
+worse than a clear failure.
+
+`create_vm_aws_image_owners` is quoted deliberately — unquoted it parses as an `int`,
+and the module's `owners` parameter expects strings. It must never be blank: an
+unowned search returns every public image matching the name across all AWS accounts,
+and there is an assert enforcing that.
 
 The ticket update goes through `include_role: snow_ticket, tasks_from: note` rather than
 calling `servicenow.itsm.incident` directly — that is
