@@ -360,19 +360,115 @@ they're missing.
 
 ---
 
-## 8. Prove the artifact handoff
+## 8. Build the two-node workflow
 
-This is the mechanic the whole demo rests on, so test it explicitly rather than assuming.
+This proves the mechanic the whole demo rests on: that `set_stats` artifacts cross
+between workflow nodes. A job template cannot hand `snow_sys_id` to another job
+template — only a workflow can — so there is no point building the other three nodes
+until this works.
 
-Create a minimal workflow (Resources → Templates → Add → Workflow Job Template) with just
-two nodes: `snow-open-ticket` → **on success** → `provision-ec2`. Launch it **without**
-supplying `snow_sys_id` anywhere.
+### 8.1 Sync the project first
 
-**Expected:** one incident, two work notes, one instance — and node 2 never had the
-sys_id handed to it manually.
+Resources → Projects → `aap-snow` → **Sync**. The playbooks now use the APD survey's
+variable names; if the project is stale you will get confusing "Required variables not
+set" failures.
 
-If node 2 fails its artifact assert, the artifact didn't cross. Check that node 1 actually
-succeeded and that no survey field or workflow-level extra var is shadowing `snow_sys_id`.
+### 8.2 Copy the survey from APD
+
+The playbooks take the APD **"Cloud | AWS | Create VM"** survey verbatim, so reuse it
+rather than retyping it:
+
+Templates → `Cloud | AWS | Create VM` → Survey → ⋮ → **Export**, then import it onto the
+workflow you create below. If your controller has no export option, recreate these
+twelve questions — the variable names must match exactly:
+
+| Question | Variable | Type | Required | Default |
+|---|---|---|---|---|
+| AWS Region | `create_vm_aws_region` | multiplechoice | yes | `us-east-2` |
+| Name | `create_vm_vm_name` | text | yes | — |
+| Owner | `create_vm_vm_owner` | text | yes | — |
+| Deployment | `create_vm_vm_deployment` | text | yes | — |
+| Purpose | `create_vm_vm_purpose` | text | yes | `demo` |
+| Environment | `create_vm_vm_environment` | multiplechoice | yes | `Dev`/`QA`/`Prod` |
+| Blueprint | `vm_blueprint` | multiplechoice | yes | `al2023`/`rhel8`/`rhel9` |
+| Subnet | `create_vm_aws_vpc_subnet_name` | text | yes | `aws-test-subnet` |
+| Security Group | `create_vm_aws_securitygroup_name` | text | yes | `aws-test-sg` |
+| SSH Keypair | `create_vm_aws_keypair_name` | text | yes | `aws-test-key` |
+| AWS Instance Type | `create_vm_aws_instance_size` | text | no | *(blank)* |
+| AWS Image Filter | `create_vm_aws_image_filter` | text | no | *(blank)* |
+
+> **Drop the Windows and rhel7 blueprint choices** if you are recreating it. Phase 3
+> patches with `dnf`; the playbook rejects Windows up front with an explanation, but it
+> is cleaner not to offer the option. Supported: `al2023`, `rhel8`, `rhel9`, `kafka`.
+
+> **The survey goes on the workflow, not the job templates.** Survey answers become
+> launch-time extra vars for the whole workflow, so every node sees them. Putting it on
+> individual templates means node 2 prompts again.
+
+### 8.3 Create the workflow
+
+Resources → Templates → **Add** → **Add workflow template**.
+
+- **Name:** `Provision & Patch EC2 with ServiceNow`
+- **Organization:** your org
+- **Inventory:** Demo Inventory — tick **Prompt on launch**
+- Save, then import the survey from 8.2 and **enable** it.
+
+In the visualizer:
+
+1. Add node → `snow-open-ticket` → Save
+2. Click that node → **+** → link type **On Success** → `provision-ec2` → Save
+3. Save the workflow.
+
+Leave `snow_sys_id` out of the survey and out of every node's extra vars. That is the
+whole point — node 2 has to receive it as an artifact.
+
+### 8.4 Launch and check
+
+Launch it, answering the survey. Suggested first run:
+
+```
+AWS Region:     us-east-2
+Name:           web-demo-01
+Owner:          <you>
+Deployment:     demo
+Purpose:        demo
+Environment:    Dev
+Blueprint:      al2023
+Subnet:         aws-test-subnet
+Security Group: aws-test-sg
+SSH Keypair:    aws-test-key
+```
+
+Leave Instance Type and Image Filter blank — that exercises the blueprint fallback.
+
+**Expected:**
+
+| Check | Where |
+|---|---|
+| One incident created, state In Progress | ServiceNow |
+| Work note 1: "Request received…" | ServiceNow activity stream |
+| Work note 2: the instance-facts block | ServiceNow activity stream |
+| `snow_sys_id` and `snow_number` present | node 1 → Details → **Artifacts** |
+| `ec2_instance_id`, `ec2_private_ip`, `ci_payload` | node 2 → Details → **Artifacts** |
+| One running instance tagged `snow_incident=INC…` | AWS console |
+
+The ticket number on the instance tag should match the incident. That is the loop
+closing in both directions.
+
+### 8.5 If it fails
+
+| Symptom | Cause |
+|---|---|
+| Node 2: "snow_sys_id and snow_number are missing" | The artifact did not cross. Confirm node 1 succeeded, that the edge is **On Success**, and that nothing sets `snow_sys_id` at launch. |
+| Node 2: "Required variables not set" | Survey is on the job template instead of the workflow, or the project is stale — re-sync it. |
+| "couldn't resolve module/action amazon.aws…" | The EE on node 2 lacks `amazon.aws` or `boto3`. |
+| "Expected 1 instance named …, got 0" | Subnet or security group **name** does not exist in that region. |
+| AMI discovery returns nothing | Blueprint filter does not match in your region; try `al2023`. |
+| Read operation timed out | Add `SN_TIMEOUT: '60'` to the credential injector (step 4b). |
+
+Report back what breaks and I will fix it. Once this passes, the remaining three nodes
+are additive — same pattern, no new mechanics.
 
 ---
 
