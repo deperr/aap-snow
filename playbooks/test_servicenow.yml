@@ -11,6 +11,9 @@
 #   3. update  — proves the work-note mechanic the whole demo rests on
 #   4. resolve — proves close_code/close_notes, which Phase 4 needs
 #
+# Steps 4, 5 and 7 post dummy data in the exact shape Phases 2-4 will use, so you can
+# see how multi-line notes actually render in ServiceNow before relying on them.
+#
 # Run in AAP with only the ServiceNow credential attached. Locally:
 #   SN_HOST=… SN_USERNAME=… SN_PASSWORD=… ansible-playbook playbooks/test_servicenow.yml
 #
@@ -66,7 +69,7 @@
         "5": awaiting_change
 
   tasks:
-    - name: 1/6 — Confirm the credential injected (values never printed)
+    - name: 1/7 — Confirm the credential injected (values never printed)
       ansible.builtin.assert:
         that:
           - lookup('env', 'SN_HOST') | length > 0
@@ -86,7 +89,7 @@
     - name: Run the lifecycle
       block:
 
-        - name: 2/6 — Read existing incidents (proves auth + network + collection)
+        - name: 2/7 — Read existing incidents (proves auth + network + collection)
           servicenow.itsm.incident_info:  # noqa: args[module]
             incident_mapping: "{{ snow_incident_mapping }}"
           register: snow_read
@@ -97,7 +100,7 @@
               Read OK — {{ snow_read.records | length }} incident(s) visible.
               Sample: {{ (snow_read.records | map(attribute='number') | list)[:3] | join(', ') | default('none', true) }}
 
-        - name: 3/6 — Create a test incident
+        - name: 3/7 — Create a test incident
           servicenow.itsm.incident:  # noqa: args[module]
             incident_mapping: "{{ snow_incident_mapping }}"
             state: new
@@ -116,15 +119,42 @@
               - "Created {{ snow_created.record.number }} ({{ snow_created.record.sys_id }})"
               - "View it: {{ snow_host }}/nav_to.do?uri=incident.do%3Fsys_id%3D{{ snow_created.record.sys_id }}"
 
-        - name: 4/6 — Add a work note and change a verifiable field
+        # The next two notes carry dummy data in the exact shape Phases 2 and 3 will
+        # post. ServiceNow renders journal entries as HTML, which can collapse runs of
+        # spaces, so column alignment that looks right in the playbook may not survive
+        # to the activity stream. Posting both formats means one run answers the
+        # question. Compare them on the ticket and tell me which reads better.
+
+        - name: 4/7 — Post the Phase 2 instance block (space-aligned columns)
           servicenow.itsm.incident:  # noqa: args[module]
             incident_mapping: "{{ snow_incident_mapping }}"
             sys_id: "{{ snow_created.record.sys_id }}"
             description: "UPDATED by the connectivity test — this proves the update path works."
             other:
-              work_notes: "Step 2 — work note appended by AAP. This is the mechanic the demo relies on."
+              work_notes: |
+                EC2 instance provisioned.
+                  Hostname:      web-demo-01
+                  Instance ID:   i-0a1b2c3d4e5f67890
+                  Instance type: t3.micro
+                  Region / AZ:   us-east-2 / us-east-2a
+                  AMI:           ami-0abcdef1234567890
+                  Private IP:    10.0.1.47
+                  Public IP:     3.142.59.26
+                Instance tagged with snow_incident={{ snow_created.record.number }}.
 
-        - name: 5/6 — Read the ticket back and confirm the update landed
+        - name: 5/7 — Post the Phase 3 patch summary (compact, no alignment padding)
+          servicenow.itsm.incident:  # noqa: args[module]
+            incident_mapping: "{{ snow_incident_mapping }}"
+            sys_id: "{{ snow_created.record.sys_id }}"
+            other:
+              work_notes: |
+                Patching complete on web-demo-01 (i-0a1b2c3d4e5f67890).
+                - Packages updated: 47
+                - Reboot required: yes
+                - Kernel: 6.1.112-122.189.amzn2023 -> 6.1.119-129.201.amzn2023
+                - Duration: 1m 52s
+
+        - name: 6/7 — Read the ticket back and confirm the update landed
           servicenow.itsm.incident_info:  # noqa: args[module]
             incident_mapping: "{{ snow_incident_mapping }}"
             sys_id: "{{ snow_created.record.sys_id }}"
@@ -143,15 +173,22 @@
               be partial — check the service account's ACLs on the incident table.
             success_msg: "Update round-trip confirmed on {{ snow_created.record.number }}."
 
-        - name: 6/6 — Resolve the ticket
+        # close_notes is a plain text field, not a journal field, so it may render
+        # differently from the work notes above. Worth seeing both.
+        - name: 7/7 — Resolve with the Phase 4 close notes
           servicenow.itsm.incident:  # noqa: args[module]
             incident_mapping: "{{ snow_incident_mapping }}"
             sys_id: "{{ snow_created.record.sys_id }}"
             state: resolved
             close_code: "{{ snow_test_close_code }}"
-            close_notes: "Connectivity test completed successfully. No action required."
+            close_notes: |
+              Provisioned and patched by AAP.
+                Instance:  web-demo-01 / i-0a1b2c3d4e5f67890
+                Patched:   47 packages
+                Rebooted:  yes
+                AAP job:   https://aap.example.com/#/jobs/playbook/1234
             other:
-              work_notes: "Step 3 — resolved by AAP."
+              work_notes: "Resolved by AAP. This is dummy data from the connectivity test."
           when: snow_test_resolve | bool
 
         - name: Delete the test ticket
@@ -166,10 +203,17 @@
               - "================ ServiceNow connectivity: PASS ================"
               - "Read:    ok"
               - "Create:  ok — {{ snow_created.record.number }}"
-              - "Update:  ok — work note + field change verified"
+              - "Update:  ok — work notes + field change verified"
               - "Resolve: {{ 'ok' if snow_test_resolve | bool else 'skipped' }}"
               - "Deleted: {{ 'yes' if snow_test_delete | bool else 'no — ticket left for inspection' }}"
               - "{{ snow_host }}/nav_to.do?uri=incident.do%3Fsys_id%3D{{ snow_created.record.sys_id }}"
+              - "---"
+              - "Now open the ticket and check how the multi-line notes rendered:"
+              - "  * Phase 2 block  — are the columns still aligned, or did the spaces collapse?"
+              - "  * Phase 3 block  — compact '- key: value' lines, no alignment to lose"
+              - "  * Close notes    — plain text field, may render differently again"
+              - "Tell me which reads best and I'll standardise the real playbooks on it."
+              - "==============================================================="
               - "==============================================================="
 
       rescue:
