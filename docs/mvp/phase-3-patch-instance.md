@@ -7,69 +7,46 @@
 **This is the core of the demo.** Everything before it is setup; everything after is
 packaging.
 
+**Status: implemented** (not yet run against a live instance)
+
+## What was built
+
+| File | Purpose |
+|---|---|
+| [`playbooks/patch_instance.yml`](../../playbooks/patch_instance.yml) | The Phase 3 playbook |
+
+Two plays: the first picks the address and does `add_host`, the second patches. Both
+ticket writes go through `snow_ticket`, which already delegates to localhost and carries
+the auth preflight.
+
+## Connecting to the instance
+
+The playbook prefers **`ec2_public_ip`** and falls back to `ec2_private_ip`, because the
+AAP execution node usually sits outside the demo VPC. If yours is inside it, or the
+instance has no public address, pass `ec2_connect_ip` explicitly.
+
+The login user and key come from the AAP **Machine credential**. The playbook sets no
+`ansible_user` anywhere — doing so would override the credential. Locally, pass
+`-u ec2-user --private-key ...`.
+
 ## Goal
 
 Patch the instance that was just provisioned, and have the ticket narrate it.
 
-## Playbook
+## What it reports
 
-`playbooks/patch_instance.yml`:
+Two work notes. One when the host becomes reachable, naming the OS and kernel, and one
+when patching finishes:
 
-```yaml
-- name: Add the new instance to the in-memory inventory
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    # No ansible_user here — the AAP Machine credential supplies the login user and
-    # key. Setting it would override the credential. Locally, pass -u ec2-user.
-    - ansible.builtin.add_host:
-        name: "{{ ec2_private_ip }}"
-        groups: new_instance
-
-- name: Patch it
-  hosts: new_instance
-  gather_facts: false
-  tasks:
-    - name: Wait for SSH
-      ansible.builtin.wait_for_connection:
-        timeout: 300
-
-    - name: Note that patching has begun
-      servicenow.itsm.incident:
-        sys_id: "{{ snow_sys_id }}"
-        other:
-          work_notes: "Instance reachable. Applying all available updates…"
-      delegate_to: localhost          # ← see "Watch for" below
-
-    - name: Apply all available updates
-      ansible.builtin.dnf:
-        name: '*'
-        state: latest
-      register: patch
-
-    - name: Check whether a reboot is required
-      ansible.builtin.command: needs-restarting -r
-      register: restart_check
-      changed_when: false
-      failed_when: false
-
-    - name: Publish patch outcome
-      ansible.builtin.set_stats:
-        data:
-          patch_count: "{{ patch.results | default([]) | length }}"
-          reboot_required: "{{ restart_check.rc != 0 }}"
-        per_host: false
-
-    - name: Report patch results to the ticket
-      servicenow.itsm.incident:
-        sys_id: "{{ snow_sys_id }}"
-        other:
-          work_notes: |
-            Patching complete on {{ create_vm_vm_name }} ({{ ec2_instance_id }}).
-              Packages updated: {{ patch.results | default([]) | length }}
-              Reboot required:  {{ 'yes' if restart_check.rc != 0 else 'no' }}
-      delegate_to: localhost
 ```
+Patching complete on web-demo-01 (i-0a1b2c3d4e5f67890).
+- Packages updated: 47
+- Reboot required: yes
+- Duration: 1m 52s
+- OS: RedHat 9.6, kernel 5.14.0-570.el9.x86_64
+```
+
+Artifacts published for Phases 4-5: `patch_count`, `reboot_required`, `patch_seconds`.
 
 ## Done when
 

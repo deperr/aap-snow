@@ -1,0 +1,142 @@
+---
+# Phase 3 — docs/mvp/phase-3-patch-instance.md
+#
+# Patches the instance Phase 2 provisioned and narrates it onto the same ticket.
+#
+# Required artifacts (from Phases 1 and 2):
+#   snow_sys_id, snow_number, ec2_instance_id, and one of ec2_public_ip / ec2_private_ip
+#
+# Optional:
+#   ec2_connect_ip   connect to this address instead of the auto-selected one
+#   ec2_ssh_timeout  seconds to wait for SSH (default 300)
+#
+# The login user and key come from the AAP **Machine credential** — this playbook
+# deliberately sets no ansible_user. Locally, pass `-u ec2-user --private-key ...`.
+
+- name: Select the patch target
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars_files:
+    - ../vars/demo.yml
+
+  pre_tasks:
+    - name: Confirm the upstream artifacts arrived
+      ansible.builtin.assert:
+        that:
+          - snow_sys_id | default("", true) | length > 0
+          - ec2_instance_id | default("", true) | length > 0
+          - (ec2_connect_ip | default("", true) | length > 0)
+            or (ec2_public_ip | default("", true) | length > 0)
+            or (ec2_private_ip | default("", true) | length > 0)
+        fail_msg: >-
+          Missing upstream artifacts. This playbook runs after provision_ec2.yml in a
+          workflow and needs snow_sys_id, ec2_instance_id and an IP address. To run it
+          standalone, pass those plus ec2_connect_ip.
+        quiet: true
+
+  tasks:
+    # Prefer the public address: the AAP execution node usually sits outside the demo
+    # VPC. Override with ec2_connect_ip when it doesn't.
+    - name: Decide which address to connect to
+      ansible.builtin.set_fact:
+        ec2_target_ip: >-
+          {{ ec2_connect_ip | default('', true)
+             or ec2_public_ip | default('', true)
+             or ec2_private_ip }}
+
+    - name: Add the instance to the in-memory inventory
+      ansible.builtin.add_host:
+        name: "{{ ec2_target_ip }}"
+        groups: patch_target
+
+    - name: Report the target
+      ansible.builtin.debug:
+        msg: >-
+          Patching {{ create_vm_vm_name }} ({{ ec2_instance_id }}) via
+          {{ ec2_target_ip }}.
+
+- name: Patch the instance
+  hosts: patch_target
+  gather_facts: true
+  become: true
+
+  vars_files:
+    - ../vars/demo.yml
+
+  tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        timeout: "{{ ec2_ssh_timeout | default(300) }}"
+
+    - name: Note that patching has begun
+      ansible.builtin.include_role:
+        name: snow_ticket
+        tasks_from: note
+      vars:
+        snow_ticket_note: >-
+          Instance reachable at {{ inventory_hostname }}
+          ({{ ansible_distribution }} {{ ansible_distribution_version }},
+          kernel {{ ansible_kernel }}). Applying all available updates…
+
+    - name: Record the start time
+      ansible.builtin.set_fact:
+        patch_started: "{{ now().strftime('%s') | int }}"
+
+    # noqa: package-latest — "install everything available" is the entire job here.
+    # The rule exists to stop `latest` creeping into config management, where it makes
+    # runs non-reproducible; a patching playbook is the sanctioned exception.
+    - name: Apply all available updates  # noqa: package-latest
+      ansible.builtin.dnf:
+        name: '*'
+        state: latest
+      register: patch
+
+    # needs-restarting ships in dnf-plugins-core. Present on RHEL and AL2023 AMIs, but
+    # ensure it rather than discovering it is missing mid-demo.
+    - name: Ensure the reboot checker is installed
+      ansible.builtin.dnf:
+        name: dnf-plugins-core
+        state: present
+
+    # rc 0 = no reboot needed, rc 1 = reboot needed, anything else = check failed.
+    - name: Check whether a reboot is required
+      ansible.builtin.command: dnf -q needs-restarting -r
+      register: restart_check
+      changed_when: false
+      failed_when: false
+
+    - name: Summarise the patch run
+      ansible.builtin.set_fact:
+        patch_count: "{{ patch.results | default([]) | length }}"
+        patch_seconds: "{{ (now().strftime('%s') | int) - (patch_started | int) }}"
+        reboot_required: "{{ restart_check.rc == 1 }}"
+        reboot_check_ok: "{{ restart_check.rc in [0, 1] }}"
+
+    - name: Publish patch results to downstream nodes
+      ansible.builtin.set_stats:
+        data:
+          patch_count: "{{ patch_count }}"
+          reboot_required: "{{ reboot_required }}"
+          patch_seconds: "{{ patch_seconds }}"
+        per_host: false
+
+    - name: Report patch results to the ticket
+      ansible.builtin.include_role:
+        name: snow_ticket
+        tasks_from: note
+      vars:
+        snow_ticket_note: |
+          Patching complete on {{ create_vm_vm_name }} ({{ ec2_instance_id }}).
+          - Packages updated: {{ patch_count }}
+          - Reboot required: {{ 'yes' if reboot_required | bool else ('no' if reboot_check_ok | bool else 'unknown - check failed') }}
+          - Duration: {{ (patch_seconds | int // 60) }}m {{ (patch_seconds | int % 60) }}s
+          - OS: {{ ansible_distribution }} {{ ansible_distribution_version }}, kernel {{ ansible_kernel }}
+
+    - name: Summarise
+      ansible.builtin.debug:
+        msg:
+          - "Packages updated: {{ patch_count }}"
+          - "Reboot required:  {{ reboot_required }}"
+          - "Duration:         {{ patch_seconds }}s"
