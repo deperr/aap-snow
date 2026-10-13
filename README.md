@@ -5,6 +5,7 @@ ticket carrying the real instance facts, patches the instance, and updates and r
 the ticket as it goes.
 
 **Start here: [docs/mvp/](docs/mvp/README.md)** — goal, phased plan, and known risks.
+**Running it in AAP: [docs/mvp/aap-setup.md](docs/mvp/aap-setup.md)**.
 
 ## The workflow
 
@@ -59,6 +60,7 @@ showing which artifacts flow along each edge is in
 
 ```
 playbooks/     one playbook per workflow node
+  test_servicenow.yml   standalone AAP <-> ServiceNow connectivity check
 roles/
   snow_ticket/ every ServiceNow write goes through here
 vars/demo.yml  shared demo defaults (overridable by survey / -e)

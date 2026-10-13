@@ -20,10 +20,11 @@ Patch the instance that was just provisioned, and have the ticket narrate it.
   hosts: localhost
   gather_facts: false
   tasks:
+    # No ansible_user here — the AAP Machine credential supplies the login user and
+    # key. Setting it would override the credential. Locally, pass -u ec2-user.
     - ansible.builtin.add_host:
         name: "{{ ec2_private_ip }}"
         groups: new_instance
-        ansible_user: ec2-user
 
 - name: Patch it
   hosts: new_instance

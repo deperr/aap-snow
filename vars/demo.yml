@@ -11,5 +11,6 @@ ec2_ami_ssm_parameter: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-de
 # How long to wait for the instance to pass EC2 status checks.
 ec2_wait_timeout: 600
 
-# Login user for the AMI above. RHEL images also use ec2-user; Ubuntu would be 'ubuntu'.
-ec2_remote_user: ec2-user
+# NOTE: no SSH user here on purpose. The AAP **Machine credential** supplies the login
+# user and private key; setting `ansible_user` anywhere in this repo would override it
+# and defeat the credential. See docs/mvp/aap-setup.md § credential model.

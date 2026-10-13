@@ -1,0 +1,154 @@
+---
+# Connectivity test — AAP ↔ ServiceNow.
+#
+# Standalone on purpose: no roles, no artifacts, no AWS. If this passes, the credential,
+# the EE and the PDI are all good and any later failure is in the demo logic, not the
+# plumbing.
+#
+# It exercises the three operations the demo depends on:
+#   1. read    — proves auth and network
+#   2. create  — proves write access and the `caller` field resolves
+#   3. update  — proves the work-note mechanic the whole demo rests on
+#   4. resolve — proves close_code/close_notes, which Phase 4 needs
+#
+# Run in AAP with only the ServiceNow credential attached. Locally:
+#   SN_HOST=… SN_USERNAME=… SN_PASSWORD=… ansible-playbook playbooks/test_servicenow.yml
+#
+# Options:
+#   -e snow_test_caller=first.last   caller for the test ticket (default: admin)
+#   -e snow_test_resolve=false       leave the ticket open instead of resolving it
+#   -e snow_test_delete=true         delete the ticket afterwards (often needs admin)
+
+- name: Test ServiceNow connectivity from AAP
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars:
+    snow_test_caller: admin
+    snow_test_resolve: true
+    snow_test_delete: false
+    snow_test_close_code: "Solved (Permanently)"
+    snow_host: "{{ lookup('env', 'SN_HOST') }}"
+
+  tasks:
+    - name: 1/6 — Confirm the credential injected (values never printed)
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'SN_HOST') | length > 0
+          - lookup('env', 'SN_USERNAME') | length > 0
+          - lookup('env', 'SN_PASSWORD') | length > 0
+        fail_msg: >-
+          One or more of SN_HOST / SN_USERNAME / SN_PASSWORD is empty.
+          In AAP: the ServiceNow credential is not attached to this job template, or the
+          credential type's injector configuration has a typo.
+          Locally: export the three variables before running.
+        success_msg: "Credential injected: SN_HOST, SN_USERNAME and SN_PASSWORD are all set."
+
+    - name: Show which instance we are talking to
+      ansible.builtin.debug:
+        msg: "Target instance: {{ snow_host }} (user: {{ lookup('env', 'SN_USERNAME') }})"
+
+    - name: Run the lifecycle
+      block:
+
+        - name: 2/6 — Read existing incidents (proves auth + network + collection)
+          servicenow.itsm.incident_info:  # noqa: args[module]
+          register: snow_read
+
+        - name: Report what we could see
+          ansible.builtin.debug:
+            msg: >-
+              Read OK — {{ snow_read.records | length }} incident(s) visible.
+              Sample: {{ snow_read.records | map(attribute='number') | list | first(3) | join(', ') | default('none', true) }}
+
+        - name: 3/6 — Create a test incident
+          servicenow.itsm.incident:  # noqa: args[module]
+            state: new
+            caller: "{{ snow_test_caller }}"
+            short_description: "[AAP connectivity test] safe to close"
+            description: "Created by playbooks/test_servicenow.yml to verify AAP can reach ServiceNow."
+            impact: low
+            urgency: low
+            other:
+              work_notes: "Step 1 — ticket created by AAP."
+          register: snow_created
+
+        - name: Report the new ticket
+          ansible.builtin.debug:
+            msg:
+              - "Created {{ snow_created.record.number }} ({{ snow_created.record.sys_id }})"
+              - "View it: {{ snow_host }}/nav_to.do?uri=incident.do%3Fsys_id%3D{{ snow_created.record.sys_id }}"
+
+        - name: 4/6 — Add a work note and change a verifiable field
+          servicenow.itsm.incident:  # noqa: args[module]
+            sys_id: "{{ snow_created.record.sys_id }}"
+            description: "UPDATED by the connectivity test — this proves the update path works."
+            other:
+              work_notes: "Step 2 — work note appended by AAP. This is the mechanic the demo relies on."
+
+        - name: 5/6 — Read the ticket back and confirm the update landed
+          servicenow.itsm.incident_info:  # noqa: args[module]
+            sys_id: "{{ snow_created.record.sys_id }}"
+          register: snow_verify
+
+        # Deliberately checks `description`, not `work_notes`: work notes are a journal
+        # field and the Table API does not return their content in the record, so
+        # asserting on them would fail even when the update succeeded.
+        - name: Confirm the round-trip
+          ansible.builtin.assert:
+            that:
+              - snow_verify.records | length == 1
+              - "'UPDATED by the connectivity test' in snow_verify.records[0].description"
+            fail_msg: >-
+              The ticket was created but the update did not read back. Write access may
+              be partial — check the service account's ACLs on the incident table.
+            success_msg: "Update round-trip confirmed on {{ snow_created.record.number }}."
+
+        - name: 6/6 — Resolve the ticket
+          servicenow.itsm.incident:  # noqa: args[module]
+            sys_id: "{{ snow_created.record.sys_id }}"
+            state: resolved
+            close_code: "{{ snow_test_close_code }}"
+            close_notes: "Connectivity test completed successfully. No action required."
+            other:
+              work_notes: "Step 3 — resolved by AAP."
+          when: snow_test_resolve | bool
+
+        - name: Delete the test ticket
+          servicenow.itsm.incident:  # noqa: args[module]
+            sys_id: "{{ snow_created.record.sys_id }}"
+            state: absent
+          when: snow_test_delete | bool
+
+        - name: PASS
+          ansible.builtin.debug:
+            msg:
+              - "================ ServiceNow connectivity: PASS ================"
+              - "Read:    ok"
+              - "Create:  ok — {{ snow_created.record.number }}"
+              - "Update:  ok — work note + field change verified"
+              - "Resolve: {{ 'ok' if snow_test_resolve | bool else 'skipped' }}"
+              - "Deleted: {{ 'yes' if snow_test_delete | bool else 'no — ticket left for inspection' }}"
+              - "{{ snow_host }}/nav_to.do?uri=incident.do%3Fsys_id%3D{{ snow_created.record.sys_id }}"
+              - "==============================================================="
+
+      rescue:
+        - name: FAIL — likely causes
+          ansible.builtin.debug:
+            msg:
+              - "================ ServiceNow connectivity: FAIL ================"
+              - "Failed task: {{ ansible_failed_task.name | default('unknown') }}"
+              - "Error: {{ ansible_failed_result.msg | default('see above') | truncate(300) }}"
+              - "---"
+              - "401 / Unauthorized      -> wrong username or password in the credential"
+              - "403 / Forbidden         -> service account is missing the itil role"
+              - "Name or service unknown -> SN_HOST wrong, or the PDI is hibernating (log in to wake it)"
+              - "couldn't resolve module -> servicenow.itsm missing from the execution environment"
+              - "Invalid caller          -> pass -e snow_test_caller=<a real user_name>"
+              - "close_code invalid      -> pass -e snow_test_close_code='<valid code for your instance>'"
+              - "==============================================================="
+
+        - name: Mark the play failed
+          ansible.builtin.fail:
+            msg: "ServiceNow connectivity test failed — see the diagnostics above."
