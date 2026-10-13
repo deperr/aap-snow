@@ -31,6 +31,34 @@
     snow_test_close_code: "Solved (Permanently)"
     snow_host: "{{ lookup('env', 'SN_HOST') }}"
 
+    # The collection ships an older ServiceNow close_code list (Duplicate, Known error,
+    # Solution provided, …). Modern instances use the "Solved (…)" set, so every read
+    # logs "Encountered unknown value … while mapping field close_code".
+    #
+    # Those warnings are cosmetic — an unmapped value is passed through verbatim — but
+    # they look like errors on a demo screen. Supplying incident_mapping replaces the
+    # list for that field and silences them. Identity mapping: the value ServiceNow
+    # stores is the value Ansible uses.
+    #
+    # Trim or extend these to match your instance's actual choice lists.
+    snow_incident_mapping:
+      close_code:
+        "": ""
+        "Solved (Permanently)": "Solved (Permanently)"
+        "Solved (Work Around)": "Solved (Work Around)"
+        "Solved Remotely (Permanently)": "Solved Remotely (Permanently)"
+        "Solved Remotely (Work Around)": "Solved Remotely (Work Around)"
+        "Not Solved (Not Reproducible)": "Not Solved (Not Reproducible)"
+        "Not Solved (Too Costly)": "Not Solved (Too Costly)"
+        "Closed/Resolved by Caller": "Closed/Resolved by Caller"
+      hold_reason:
+        "": ""
+        "1": awaiting_caller
+        "2": "2"          # present on this instance, not in the collection's defaults
+        "3": awaiting_problem
+        "4": awaiting_vendor
+        "5": awaiting_change
+
   tasks:
     - name: 1/6 — Confirm the credential injected (values never printed)
       ansible.builtin.assert:
@@ -54,16 +82,18 @@
 
         - name: 2/6 — Read existing incidents (proves auth + network + collection)
           servicenow.itsm.incident_info:  # noqa: args[module]
+            incident_mapping: "{{ snow_incident_mapping }}"
           register: snow_read
 
         - name: Report what we could see
           ansible.builtin.debug:
             msg: >-
               Read OK — {{ snow_read.records | length }} incident(s) visible.
-              Sample: {{ snow_read.records | map(attribute='number') | list | first(3) | join(', ') | default('none', true) }}
+              Sample: {{ (snow_read.records | map(attribute='number') | list)[:3] | join(', ') | default('none', true) }}
 
         - name: 3/6 — Create a test incident
           servicenow.itsm.incident:  # noqa: args[module]
+            incident_mapping: "{{ snow_incident_mapping }}"
             state: new
             caller: "{{ snow_test_caller }}"
             short_description: "[AAP connectivity test] safe to close"
@@ -82,6 +112,7 @@
 
         - name: 4/6 — Add a work note and change a verifiable field
           servicenow.itsm.incident:  # noqa: args[module]
+            incident_mapping: "{{ snow_incident_mapping }}"
             sys_id: "{{ snow_created.record.sys_id }}"
             description: "UPDATED by the connectivity test — this proves the update path works."
             other:
@@ -89,6 +120,7 @@
 
         - name: 5/6 — Read the ticket back and confirm the update landed
           servicenow.itsm.incident_info:  # noqa: args[module]
+            incident_mapping: "{{ snow_incident_mapping }}"
             sys_id: "{{ snow_created.record.sys_id }}"
           register: snow_verify
 
@@ -107,6 +139,7 @@
 
         - name: 6/6 — Resolve the ticket
           servicenow.itsm.incident:  # noqa: args[module]
+            incident_mapping: "{{ snow_incident_mapping }}"
             sys_id: "{{ snow_created.record.sys_id }}"
             state: resolved
             close_code: "{{ snow_test_close_code }}"
