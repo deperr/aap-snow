@@ -96,6 +96,17 @@
       register: create_vm_aws_subnet
       when: create_vm_aws_subnet_id is not defined
 
+    - name: Confirm the subnet name resolved
+      ansible.builtin.assert:
+        that:
+          - create_vm_aws_subnet.subnets | default([]) | length > 0
+        fail_msg: >-
+          No subnet tagged Name='{{ create_vm_aws_vpc_subnet_name }}' exists in
+          {{ create_vm_aws_region }}. Check the name and the region against the APD
+          cloud stack, or pass create_vm_aws_subnet_id directly to skip this lookup.
+        quiet: true
+      when: create_vm_aws_subnet_id is not defined
+
     - name: Save subnet id
       ansible.builtin.set_fact:
         create_vm_aws_subnet_id: "{{ create_vm_aws_subnet.subnets | map(attribute='id') | list | last }}"
@@ -109,6 +120,18 @@
           name: "{{ create_vm_aws_image_filter }}"
           architecture: "{{ create_vm_aws_image_architecture }}"
       register: create_vm_vm_amis
+      when: create_vm_aws_instance_ami is not defined
+
+    - name: Confirm the image filter matched something
+      ansible.builtin.assert:
+        that:
+          - create_vm_vm_amis.images | default([]) | length > 0
+        fail_msg: >-
+          No AMI in {{ create_vm_aws_region }} matches filter
+          '{{ create_vm_aws_image_filter }}' (arch {{ create_vm_aws_image_architecture }},
+          owners {{ create_vm_aws_image_owners | default('any', true) }}). Check the
+          blueprint, or pass create_vm_aws_instance_ami directly.
+        quiet: true
       when: create_vm_aws_instance_ami is not defined
 
     - name: Save ami

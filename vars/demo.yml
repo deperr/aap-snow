@@ -3,11 +3,22 @@
 # "Cloud | AWS | Create VM" survey, so the same survey drives these templates.
 # Play-level vars, so survey answers and `-e` both override them.
 
-# Survey defaults (APD uses the same values).
+# Survey defaults, identical to the APD "Cloud | AWS | Create VM" survey, so a partial
+# survey (or a bare `-e` run) still works. Anything the survey sends overrides these.
 create_vm_vm_purpose: demo
 create_vm_vm_environment: Dev
 create_vm_vm_deployment: default
 create_vm_vm_owner: ansible
+create_vm_aws_region: us-east-2
+
+# Resources created by the APD cloud stack. These are *names*, not ids.
+create_vm_aws_vpc_subnet_name: aws-test-subnet
+create_vm_aws_securitygroup_name: aws-test-sg
+create_vm_aws_keypair_name: aws-test-key
+
+# Deliberately NOT defaulted — these must be a conscious choice every run:
+#   create_vm_vm_name   (every instance would otherwise be called the same thing)
+#   vm_blueprint        (picks the OS, and therefore whether Phase 3 can patch it)
 
 # How long to wait for the instance to pass EC2 status checks.
 create_vm_aws_wait_timeout: 600
