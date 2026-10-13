@@ -133,13 +133,13 @@
             other:
               work_notes: |
                 EC2 instance provisioned.
-                  Hostname:      web-demo-01
-                  Instance ID:   i-0a1b2c3d4e5f67890
-                  Instance type: t3.micro
-                  Region / AZ:   us-east-2 / us-east-2a
-                  AMI:           ami-0abcdef1234567890
-                  Private IP:    10.0.1.47
-                  Public IP:     3.142.59.26
+                - Hostname:      web-demo-01
+                - Instance ID:   i-0a1b2c3d4e5f67890
+                - Instance type: t3.micro
+                - Region / AZ:   us-east-2 / us-east-2a
+                - AMI:           ami-0abcdef1234567890
+                - Private IP:    10.0.1.47
+                - Public IP:     3.142.59.26
                 Instance tagged with snow_incident={{ snow_created.record.number }}.
 
         - name: 5/7 — Post the Phase 3 patch summary (compact, no alignment padding)
