@@ -34,9 +34,14 @@ create_vm_vm_owner: ansible
 # How long to wait for the instance to pass EC2 status checks.
 create_vm_aws_wait_timeout: 600
 
+# SSH login user for the patch play.
+#
+# The AAP Machine credential supplies the private KEY; it does not supply a usable
+# username here, because APD's credential is shared with its Windows demos. APD's own
+# AWS inventory fills that gap with `compose: {ansible_user: "'ec2-user'"}`, and where
+# APD uses add_host instead of that inventory it sets ansible_user: ec2-user directly.
+# This repo uses add_host too, so it has to do the same.
+create_vm_remote_user: ec2-user
+
 # Deliberately NOT defaulted — every instance would otherwise share a name:
 #   create_vm_vm_name
-#
-# NOTE: no SSH user here on purpose. The AAP **Machine credential** supplies the login
-# user and private key; setting `ansible_user` anywhere in this repo would override it
-# and defeat the credential. See docs/mvp/aap-setup.md § credential model.

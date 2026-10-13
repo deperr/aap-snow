@@ -9,10 +9,10 @@
 # Optional:
 #   ec2_connect_ip   connect to this address instead of the auto-selected one
 #   ec2_ssh_timeout  seconds to wait for SSH (default 300)
-#   ec2_remote_user  override the Machine credential's username (e.g. ec2-user)
+#   create_vm_remote_user  SSH login user (default: ec2-user)
 #
-# The login user and key come from the AAP **Machine credential** — this playbook
-# deliberately sets no ansible_user. Locally, pass `-u ec2-user --private-key ...`.
+# The AAP **Machine credential** supplies the SSH key. The username comes from
+# create_vm_remote_user, because APD's credential is shared with its Windows demos.
 
 - name: Select the patch target
   hosts: localhost
@@ -47,16 +47,15 @@
              or ec2_public_ip | default('', true)
              or ec2_private_ip }}
 
-    # ansible_user is normally left unset so the Machine credential supplies it.
-    # ec2_remote_user is an escape hatch for when the credential's username cannot be
-    # changed — APD's Machine credential is shared with its Windows demos, so its
-    # username is not ec2-user. With default(omit) the key is not added at all unless
-    # the variable is set, so the credential still wins by default.
+    # The Machine credential supplies the private key, not the username: APD's
+    # credential is shared with its Windows demos. APD's AWS inventory normally fills
+    # that gap with `compose: {ansible_user: "'ec2-user'"}`; add_host bypasses that
+    # inventory, so set it here exactly as APD does in its own add_host calls.
     - name: Add the instance to the in-memory inventory
       ansible.builtin.add_host:
         name: "{{ ec2_target_ip }}"
         groups: patch_target
-        ansible_user: "{{ ec2_remote_user | default(omit) }}"
+        ansible_user: "{{ create_vm_remote_user | default(omit, true) }}"
 
     - name: Report the target
       ansible.builtin.debug:

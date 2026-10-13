@@ -25,30 +25,23 @@ The playbook prefers **`ec2_public_ip`** and falls back to `ec2_private_ip`, bec
 AAP execution node usually sits outside the demo VPC. If yours is inside it, or the
 instance has no public address, pass `ec2_connect_ip` explicitly.
 
-The login user and key come from the AAP **Machine credential**. The playbook sets no
-`ansible_user` by default — doing so would override the credential. Locally, pass
-`-u ec2-user --private-key ...`.
+The AAP **Machine credential** supplies the SSH private key. The *username* comes from
+`create_vm_remote_user` (default `ec2-user`), not from the credential — APD's Machine
+credential is shared with its Windows demos, so its username is something else. APD
+normally covers this in its AWS dynamic inventory:
 
-### When the credential's username is wrong
-
-A RHEL or AL2023 AMI only creates `ec2-user`. Connecting as anything else gives:
-
+```yaml
+compose:
+  ansible_host: public_ip_address
+  ansible_user: "'ec2-user'"
 ```
-admin@18.223.185.173: Permission denied (publickey,gssapi-keyex,gssapi-with-mic).
-```
 
-Note what that error does *not* mean: the TCP connection succeeded and the host key was
-accepted, so the security group and routing are fine. Only authentication failed.
+This playbook uses `add_host` rather than that inventory, so it sets the username
+itself — exactly as APD does in its own `add_host` calls. **Reuse the APD Machine
+credential**; there is no need to clone it just to change the username.
 
-APD's Machine credential is shared with its Windows demos, so its username is not
-`ec2-user` and changing it would break those. Two ways out:
-
-1. **Preferred** — create a Linux-only Machine credential: username `ec2-user`, with the
-   **same private key** as the EC2 keypair. The key is what must match; the username is
-   independent. Attach that one to `patch-instance`.
-2. **Quick** — set `ec2_remote_user: ec2-user` as an extra var on the job template. The
-   playbook passes it to `add_host` through `default(omit)`, so it is only applied when
-   set and the credential still wins otherwise.
+If you see `Permission denied (publickey…)` naming a user that is not `ec2-user`, the
+connection and the security group are fine — only the username is wrong.
 
 ## Goal
 
