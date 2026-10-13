@@ -333,7 +333,7 @@ successfully rather than being cancelled.
 | Playbook | `playbooks/provision_ec2.yml` |
 | Inventory | Demo Inventory |
 | Execution Environment | your EE (needs `amazon.aws` + `boto3` too) |
-| Credentials | `ServiceNow PDI` **and** the AWS credential |
+| Credentials | `ServiceNow PDI` **and** the AWS credential — **both** |
 | Variables | see below |
 
 Same survey as above. The APD cloud stack's defaults work as-is:
@@ -346,6 +346,11 @@ create_vm_aws_vpc_subnet_name: aws-test-subnet
 create_vm_aws_securitygroup_name: aws-test-sg
 create_vm_aws_keypair_name: aws-test-key
 ```
+
+> **Two credentials, not one.** This template provisions *and* writes to the ticket. With
+> only the AWS credential it gets all the way through creating the instance and then
+> fails on the first ServiceNow call. A job template can hold several credentials of
+> different types — add both.
 
 This template needs `snow_sys_id` and `snow_number`, which come from Phase 1's artifacts
 when the two run in a workflow. **To test it standalone**, add the values from the Phase 1
@@ -461,6 +466,7 @@ closing in both directions.
 | Symptom | Cause |
 |---|---|
 | Node 2: "snow_sys_id and snow_number are missing" | The artifact did not cross. Confirm node 1 succeeded, that the edge is **On Success**, and that nothing sets `snow_sys_id` at launch. |
+| Node 2 creates the instance, then "ServiceNow credentials are not in the environment" | The ServiceNow credential is not attached to `provision-ec2`. It needs both that and AWS. |
 | Node 2: "Required variables not set" | Survey is on the job template instead of the workflow, or the project is stale — re-sync it. |
 | "couldn't resolve module/action amazon.aws…" | The EE on node 2 lacks `amazon.aws` or `boto3`. |
 | "Expected 1 instance named …, got 0" | Subnet or security group **name** does not exist in that region. |

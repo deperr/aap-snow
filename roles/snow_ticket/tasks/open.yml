@@ -5,6 +5,9 @@
 # Optional:  snow_sys_id (adopt instead of create)
 # Sets:      snow_ticket_sys_id, snow_ticket_number
 
+- name: Check ServiceNow auth
+  ansible.builtin.include_tasks: _assert_auth.yml
+
 - name: Validate inputs
   ansible.builtin.assert:
     that:

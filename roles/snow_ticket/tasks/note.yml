@@ -12,6 +12,9 @@
       {{ (snow_ticket_sys_id | default('', true) | string | trim)
          or (snow_sys_id | default('', true) | string | trim) }}
 
+- name: Check ServiceNow auth
+  ansible.builtin.include_tasks: _assert_auth.yml
+
 - name: Validate inputs
   ansible.builtin.assert:
     that:
