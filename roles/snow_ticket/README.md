@@ -46,11 +46,27 @@ it costs nothing.
 Takes the ticket from `snow_ticket_sys_id` (same play) or `snow_sys_id` (workflow
 artifact), in that order.
 
+### `resolve` — close the ticket
+
+```yaml
+- ansible.builtin.include_role:
+    name: snow_ticket
+    tasks_from: resolve
+  vars:
+    snow_ticket_close_notes: "…"
+```
+
+ServiceNow rejects a move to resolved without **both** `close_code` and `close_notes`,
+returning a generic HTTP 400. `snow_ticket_close_code` defaults to
+`Solved (Permanently)`; change it if your instance offers a different list.
+
+`snow_ticket_incident_mapping` supplies an identity map of modern close codes, because
+the collection ships an older list and otherwise logs
+`Encountered unknown value ... while mapping field close_code` on every resolve.
+
 ### Not yet implemented
 
-`resolve` and `escalate` land in
-[Phase 4](../../docs/mvp/phase-4-workflow.md) and
-[Phase 5](../../docs/mvp/phase-5-failure-and-teardown.md).
+`escalate` lands in [Phase 5](../../docs/mvp/phase-5-failure-and-teardown.md).
 
 ## Variables
 

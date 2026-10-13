@@ -1,0 +1,44 @@
+---
+# Moves the ticket to resolved.
+#
+# Required:  snow_ticket_close_notes
+# Required:  snow_ticket_sys_id, or snow_sys_id from a workflow artifact
+# Optional:  snow_ticket_close_code (default in defaults/main.yml)
+
+- name: Check ServiceNow auth
+  ansible.builtin.include_tasks: _assert_auth.yml
+
+- name: Resolve which ticket to close
+  ansible.builtin.set_fact:
+    snow_ticket_target_sys_id: >-
+      {{ (snow_ticket_sys_id | default('', true) | string | trim)
+         or (snow_sys_id | default('', true) | string | trim) }}
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - snow_ticket_close_notes | default("", true) | length > 0
+      - snow_ticket_target_sys_id | length > 0
+    fail_msg: >-
+      snow_ticket/resolve requires snow_ticket_close_notes and a ticket sys_id (either
+      snow_ticket_sys_id from this play, or snow_sys_id from a workflow artifact).
+    quiet: true
+
+# ServiceNow rejects a move to resolved without BOTH close_code and close_notes, and
+# surfaces it as a generic HTTP 400. incident_mapping is supplied because the
+# collection ships an older close_code list than modern instances use; without it every
+# call logs "Encountered unknown value ... while mapping field close_code".
+- name: Resolve the ticket  # noqa: args[module]
+  servicenow.itsm.incident:
+    incident_mapping: "{{ snow_ticket_incident_mapping }}"
+    sys_id: "{{ snow_ticket_target_sys_id }}"
+    state: resolved
+    close_code: "{{ snow_ticket_close_code }}"
+    close_notes: "{{ snow_ticket_close_notes }}"
+    other:
+      work_notes: "{{ snow_ticket_note | default('Resolved by Ansible Automation Platform.') }}"
+  delegate_to: "{{ snow_ticket_delegate_host }}"
+  run_once: true
+  become: false
+  environment:
+    SN_TIMEOUT: "{{ snow_ticket_timeout }}"

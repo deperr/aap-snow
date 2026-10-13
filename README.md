@@ -52,8 +52,8 @@ showing which artifacts flow along each edge is in
 | [0](docs/mvp/phase-0-environment.md) | Environment bring-up | not started |
 | [1](docs/mvp/phase-1-open-ticket.md) | Open the ticket from a playbook | **working** — verified in AAP against a live PDI |
 | [2](docs/mvp/phase-2-provision-ec2.md) | Provision EC2, write facts to the ticket | **working** — verified in AAP, two-node workflow proven |
-| [3](docs/mvp/phase-3-patch-instance.md) | Patch, report results to the ticket | **implemented**, not yet run |
-| [4](docs/mvp/phase-4-workflow.md) | Wire into one AAP workflow | not started |
+| [3](docs/mvp/phase-3-patch-instance.md) | Patch, report results to the ticket | **working** — verified in AAP |
+| [4](docs/mvp/phase-4-workflow.md) | Wire into one AAP workflow | **implemented**, not yet run |
 | [5](docs/mvp/phase-5-failure-and-teardown.md) | Failure path and cost control | not started |
 
 ## Layout

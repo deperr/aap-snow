@@ -234,7 +234,7 @@
       vars:
         snow_ticket_note: |
           EC2 instance provisioned.
-          
+
           - Hostname:      {{ create_vm_vm_name }}
           - Instance ID:   {{ ec2_facts.instance_id }}
           - Instance type: {{ ec2_facts.instance_type }}

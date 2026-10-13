@@ -1,0 +1,111 @@
+---
+# Phase 4 — docs/mvp/phase-4-workflow.md
+#
+# Reboots the instance if patching asked for one, waits for it to come back, and
+# confirms it is healthy. Skips the reboot cleanly when none is needed, so it is safe
+# to leave in the workflow unconditionally.
+#
+# Required artifacts: snow_sys_id, ec2_instance_id, an IP, reboot_required
+# Optional: ec2_connect_ip, create_vm_remote_user, ec2_reboot_timeout
+
+- name: Select the target
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars_files:
+    - ../vars/demo.yml
+
+  pre_tasks:
+    - name: Confirm the upstream artifacts arrived
+      ansible.builtin.assert:
+        that:
+          - snow_sys_id | default("", true) | length > 0
+          - ec2_instance_id | default("", true) | length > 0
+          - (ec2_connect_ip | default("", true) | length > 0)
+            or (ec2_public_ip | default("", true) | length > 0)
+            or (ec2_private_ip | default("", true) | length > 0)
+        fail_msg: >-
+          Missing upstream artifacts. This playbook runs after patch_instance.yml in a
+          workflow and needs snow_sys_id, ec2_instance_id and an IP address.
+        quiet: true
+
+  tasks:
+    - name: Decide which address to connect to
+      ansible.builtin.set_fact:
+        ec2_target_ip: >-
+          {{ ec2_connect_ip | default('', true)
+             or ec2_public_ip | default('', true)
+             or ec2_private_ip }}
+
+    - name: Add the instance to the in-memory inventory
+      ansible.builtin.add_host:
+        name: "{{ ec2_target_ip }}"
+        groups: patch_target
+        ansible_user: "{{ create_vm_remote_user | default(omit, true) }}"
+
+- name: Reboot if required, then verify
+  hosts: patch_target
+  gather_facts: true
+
+  vars_files:
+    - ../vars/demo.yml
+
+  tasks:
+    - name: Note the pre-reboot state
+      ansible.builtin.set_fact:
+        kernel_before: "{{ ansible_kernel }}"
+
+    - name: Reboot
+      ansible.builtin.reboot:
+        reboot_timeout: "{{ ec2_reboot_timeout | default(600) }}"
+        msg: "Rebooting after patching, initiated by Ansible Automation Platform"
+      become: true
+      when: reboot_required | default(false) | bool
+
+    - name: Re-read facts after the reboot
+      ansible.builtin.setup:
+      when: reboot_required | default(false) | bool
+
+    # A reboot that technically succeeded but left the box unhealthy is the failure
+    # worth catching here, so check uptime and service manager state rather than
+    # assuming the reboot module's own success is the whole story.
+    # noqa: command-instead-of-module — the systemd module manages unit state; it
+    # cannot answer "is the whole system finished booting and healthy", which is the
+    # question after a reboot. There is no module equivalent for is-system-running.
+    - name: Confirm the system is up and systemd is running  # noqa: command-instead-of-module
+      ansible.builtin.command: systemctl is-system-running --wait
+      register: systemd_state
+      changed_when: false
+      failed_when: systemd_state.rc not in [0, 1]
+
+    - name: Publish the verified state
+      ansible.builtin.set_stats:
+        data:
+          verify_kernel: "{{ ansible_kernel }}"
+          verify_systemd: "{{ systemd_state.stdout | trim }}"
+          verify_rebooted: "{{ reboot_required | default(false) | bool }}"
+        per_host: false
+
+    - name: Report the outcome to the ticket
+      ansible.builtin.include_role:
+        name: snow_ticket
+        tasks_from: note
+      vars:
+        snow_ticket_note: |
+          {% if reboot_required | default(false) | bool %}
+          Reboot complete on {{ create_vm_vm_name }} ({{ ec2_instance_id }}).
+          - Kernel: {{ kernel_before }} -> {{ ansible_kernel }}
+          {% else %}
+          No reboot required on {{ create_vm_vm_name }} ({{ ec2_instance_id }}).
+          - Kernel: {{ ansible_kernel }}
+          {% endif %}
+          - Uptime: {{ (ansible_uptime_seconds | int // 60) }}m
+          - System state: {{ systemd_state.stdout | trim }}
+
+    - name: Summarise
+      ansible.builtin.debug:
+        msg:
+          - "Rebooted:     {{ reboot_required | default(false) | bool }}"
+          - "Kernel:       {{ kernel_before }} -> {{ ansible_kernel }}"
+          - "System state: {{ systemd_state.stdout | trim }}"

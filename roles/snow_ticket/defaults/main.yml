@@ -16,6 +16,25 @@ snow_ticket_delegate_host: localhost
 # SN_TIMEOUT if the credential already sets it, otherwise use 60.
 snow_ticket_timeout: "{{ lookup('env', 'SN_TIMEOUT') | default(60, true) }}"
 
+# Close code used by `resolve`. Must be a value your instance actually offers.
+snow_ticket_close_code: "Solved (Permanently)"
+
+# The collection ships an older ServiceNow close_code list (Duplicate, Known error,
+# Solution provided, …) than modern instances use, so every resolve logs
+# "Encountered unknown value ... while mapping field close_code". Harmless — unmapped
+# values pass through verbatim — but it reads as an error on a demo screen. This is an
+# identity map of the values a current instance offers. Trim to match yours.
+snow_ticket_incident_mapping:
+  close_code:
+    "": ""
+    "Solved (Permanently)": "Solved (Permanently)"
+    "Solved (Work Around)": "Solved (Work Around)"
+    "Solved Remotely (Permanently)": "Solved Remotely (Permanently)"
+    "Solved Remotely (Work Around)": "Solved Remotely (Work Around)"
+    "Not Solved (Not Reproducible)": "Not Solved (Not Reproducible)"
+    "Not Solved (Too Costly)": "Not Solved (Too Costly)"
+    "Closed/Resolved by Caller": "Closed/Resolved by Caller"
+
 # Note: `snow_sys_id` is deliberately NOT defaulted here. It is a workflow-level
 # artifact shared across nodes, not a role-private variable, so the role reads it with
 # `| default('')` rather than claiming ownership of the name.

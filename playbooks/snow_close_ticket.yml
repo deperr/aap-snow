@@ -1,0 +1,52 @@
+---
+# Phase 4 — docs/mvp/phase-4-workflow.md
+#
+# Resolves the ticket. Reached only on the success path, so it needs no conditional:
+# the workflow graph encodes the outcome. Failures go to snow_escalate.yml instead.
+#
+# Required artifact: snow_sys_id
+# Everything else degrades to "unknown" rather than failing — a ticket that closes with
+# a gap in the summary is better than a run that cannot close its ticket at all.
+
+- name: Close the provisioning ticket
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars_files:
+    - ../vars/demo.yml
+
+  pre_tasks:
+    - name: Confirm we know which ticket to close
+      ansible.builtin.assert:
+        that:
+          - snow_sys_id | default("", true) | length > 0
+        fail_msg: >-
+          snow_sys_id is missing. This playbook is the final node of the workflow and
+          reads the artifact published by snow_open_ticket.yml.
+        quiet: true
+
+  tasks:
+    - name: Resolve the ticket
+      ansible.builtin.include_role:
+        name: snow_ticket
+        tasks_from: resolve
+      vars:
+        snow_ticket_note: "Resolved automatically — no human touched this ticket."
+        snow_ticket_close_notes: |
+          Provisioned and patched by Ansible Automation Platform.
+          - Instance: {{ create_vm_vm_name }} ({{ ec2_instance_id | default('unknown') }})
+          - Type: {{ create_vm_aws_instance_size }} in {{ create_vm_aws_region }}
+          - Image: {{ ec2_ami | default('unknown') }}
+          - Address: {{ ec2_public_ip | default('', true) or ec2_private_ip | default('unknown') }}
+          - Packages updated: {{ patch_count | default('unknown') }}
+          - Rebooted: {{ 'yes' if verify_rebooted | default(false) | bool else 'no' }}
+          - Kernel: {{ verify_kernel | default('unknown') }}
+          - System state: {{ verify_systemd | default('unknown') }}
+          - AAP job: {{ awx_job_id | default('local run') }}
+
+    - name: Summarise
+      ansible.builtin.debug:
+        msg:
+          - "Ticket {{ snow_number | default(snow_sys_id) }} resolved."
+          - "Instance {{ create_vm_vm_name }} is provisioned, patched and verified."

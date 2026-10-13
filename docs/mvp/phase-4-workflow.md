@@ -2,7 +2,33 @@
 
 [← Phase 3](phase-3-patch-instance.md) · [Index](README.md) · [Phase 5 →](phase-5-failure-and-teardown.md)
 
-**Effort:** ~1 day · **Depends on:** Phases [1](phase-1-open-ticket.md)–[3](phase-3-patch-instance.md)
+**Effort:** ~1 day · **Depends on:** Phases [1](phase-1-open-ticket.md)–[3](phase-3-patch-instance.md) ·
+**Status: implemented** (not yet run)
+
+## What was built
+
+| File | Purpose |
+|---|---|
+| [`playbooks/reboot_and_verify.yml`](../../playbooks/reboot_and_verify.yml) | Node 4 — reboots when needed, then verifies |
+| [`playbooks/snow_close_ticket.yml`](../../playbooks/snow_close_ticket.yml) | Node 5 — resolves the ticket |
+| [`roles/snow_ticket/tasks/resolve.yml`](../../roles/snow_ticket/tasks/resolve.yml) | The `resolve` action |
+
+Node 4 is safe to leave in the workflow unconditionally — it skips the reboot when
+`reboot_required` is false and still verifies and reports. Node 5 degrades every field
+to `unknown` rather than failing: a ticket that closes with a gap in the summary beats a
+run that cannot close its ticket.
+
+### Credentials per node
+
+| Node | ServiceNow | AWS | Machine |
+|---|---|---|---|
+| `snow-open-ticket` | yes | — | — |
+| `provision-ec2` | yes | yes | — |
+| `patch-instance` | yes | — | yes |
+| `reboot-and-verify` | yes | — | yes |
+| `snow-close-ticket` | yes | — | — |
+
+Every template needs **Variables → Prompt on launch** ticked.
 
 ## Goal
 
