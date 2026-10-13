@@ -34,9 +34,9 @@ export SN_USERNAME='aap.integration'
 export SN_PASSWORD='…'
 
 ansible-playbook playbooks/snow_open_ticket.yml \
-  -e ec2_name=web-demo-01 \
-  -e ec2_instance_type=t3.micro \
-  -e ec2_region=us-east-1
+  -e create_vm_vm_name=web-demo-01 \
+  -e create_vm_aws_region=us-east-2 \
+  -e vm_blueprint=al2023
 ```
 
 In AAP these three variables come from the workflow survey
@@ -53,8 +53,8 @@ shows `snow_sys_id` and `snow_number`.
 Verified locally without a PDI:
 
 - `ansible-lint` passes at the **production** profile; `yamllint` clean.
-- Missing `ec2_name`/`ec2_instance_type`/`ec2_region` fails on the assert with a usable
-  message rather than a template error.
+- Missing `create_vm_vm_name` / `create_vm_aws_region` / `vm_blueprint` fails on the
+  assert with a usable message rather than a template error.
 - With those set, execution reaches the `servicenow.itsm.incident` call and stops only on
   the absent `SN_HOST` — so everything up to the API boundary is exercised.
 - The create/adopt branch logic was unit-tested against a truth table (undefined, empty,

@@ -1,15 +1,46 @@
 ---
-# Shared demo defaults. Play-level vars, so AAP survey answers and `-e` both override
-# them. Anything a presenter might want to change should live here, not inline.
+# Defaults for the EC2 playbooks. Variable names match the Ansible Product Demos
+# "Cloud | AWS | Create VM" survey, so the same survey drives these templates.
+# Play-level vars, so survey answers and `-e` both override them.
 
-ec2_env: demo
-
-# Latest Amazon Linux 2023 AMI, resolved per-region at run time. Never hard-code an AMI
-# id — they are region-specific and go stale.
-ec2_ami_ssm_parameter: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+# Survey defaults (APD uses the same values).
+create_vm_vm_purpose: demo
+create_vm_vm_environment: Dev
+create_vm_vm_deployment: default
+create_vm_vm_owner: ansible
 
 # How long to wait for the instance to pass EC2 status checks.
-ec2_wait_timeout: 600
+create_vm_aws_wait_timeout: 600
+
+# Blueprint values, copied from APD cloud/blueprints/*.yml. The survey's
+# "AWS Instance Type" and "AWS Image Filter" are optional and fall back to these.
+# Windows blueprints are intentionally absent — Phase 3 patches with dnf.
+create_vm_blueprints:
+  al2023:
+    instance_size: t3.medium
+    image_architecture: x86_64
+    image_filter: 'al2023-ami-2023*'
+    image_owners: ''
+  rhel9:
+    instance_size: t3.medium
+    image_architecture: x86_64
+    image_filter: 'RHEL-9*HVM-*Hourly*'
+    image_owners: '309956199498'
+  rhel8:
+    instance_size: t3.medium
+    image_architecture: x86_64
+    image_filter: 'RHEL-8*HVM-*Hourly*'
+    image_owners: '309956199498'
+  rhel7:
+    instance_size: t3.medium
+    image_architecture: x86_64
+    image_filter: 'RHEL-7.9_HVM*'
+    image_owners: '309956199498'
+  kafka:
+    instance_size: t3.medium
+    image_architecture: x86_64
+    image_filter: 'RHEL-9*HVM-*Hourly*'
+    image_owners: '309956199498'
 
 # NOTE: no SSH user here on purpose. The AAP **Machine credential** supplies the login
 # user and private key; setting `ansible_user` anywhere in this repo would override it

@@ -29,14 +29,14 @@ Collect these before you start — steps 4 and 7 need them.
 | ServiceNow instance URL | Your PDI | `https://dev123456.service-now.com` |
 | ServiceNow service account | You create it; needs the `itil` role | `aap.integration` |
 | AWS region | Your cloud env | `us-east-2` |
-| Subnet ID | The demo VPC | `subnet-0abc…` |
-| Security group ID | Must allow SSH **from the AAP execution node** | `sg-0abc…` |
-| EC2 keypair name | Must exist in that region | `aap-demo-key` |
+| Subnet **name** | Created by the APD cloud stack | `aws-test-subnet` |
+| Security group **name** | Must allow SSH **from the AAP execution node** | `aws-test-sg` |
+| EC2 keypair name | Created by APD's Create Keypair job | `aws-test-key` |
 | Private key for that keypair | For the Machine credential | — |
 
-> **Region note.** The repo's docs use `us-east-1` in examples; your local AWS config
-> says `us-east-2`. Pick one and pass it as `ec2_region` consistently — the AMI lookup
-> and the subnet/SG/keypair all have to agree.
+> **Region note.** Pass `create_vm_aws_region` consistently — AMI discovery and the
+> subnet, security group and keypair all have to agree. The APD cloud stack defaults to
+> `us-east-2`.
 
 **Do not demo as `admin`.** Create the `itil` service account now; someone will ask.
 
@@ -305,10 +305,14 @@ Phases 1 and 2 both run `hosts: localhost`.
 | Credentials | `ServiceNow PDI` only |
 | Variables | see below |
 
+Attach the **APD "Cloud | AWS | Create VM" survey** — the variables match exactly, so
+you can copy that survey onto this template rather than writing a new one. Minimum for a
+manual run:
+
 ```yaml
-ec2_name: web-demo-01
-ec2_instance_type: t3.micro
-ec2_region: us-east-2
+create_vm_vm_name: web-demo-01
+create_vm_aws_region: us-east-2
+vm_blueprint: al2023
 ```
 
 Tick **Prompt on launch** for Variables.
@@ -332,13 +336,15 @@ successfully rather than being cancelled.
 | Credentials | `ServiceNow PDI` **and** the AWS credential |
 | Variables | see below |
 
+Same survey as above. The APD cloud stack's defaults work as-is:
+
 ```yaml
-ec2_name: web-demo-01
-ec2_instance_type: t3.micro
-ec2_region: us-east-2
-ec2_key_name: aap-demo-key
-ec2_subnet_id: subnet-0abc...
-ec2_security_group: sg-0abc...
+create_vm_aws_region: us-east-2
+create_vm_vm_name: web-demo-01
+vm_blueprint: al2023
+create_vm_aws_vpc_subnet_name: aws-test-subnet
+create_vm_aws_securitygroup_name: aws-test-sg
+create_vm_aws_keypair_name: aws-test-key
 ```
 
 This template needs `snow_sys_id` and `snow_number`, which come from Phase 1's artifacts

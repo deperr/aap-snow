@@ -15,7 +15,44 @@ facts — not the requested ones — onto the ticket.
 | File | Purpose |
 |---|---|
 | [`playbooks/provision_ec2.yml`](../../playbooks/provision_ec2.yml) | The Phase 2 playbook |
-| [`vars/demo.yml`](../../vars/demo.yml) | Shared demo defaults (AMI parameter path, env, wait timeout, login user) |
+| [`vars/demo.yml`](../../vars/demo.yml) | Defaults and the blueprint table |
+
+## Product Demos alignment
+
+The variables match the APD **"Cloud | AWS | Create VM"** survey exactly, so that survey
+can be attached to this job template unchanged. All twelve questions:
+
+| Survey label | Variable | Notes |
+|---|---|---|
+| AWS Region | `create_vm_aws_region` | required |
+| Name | `create_vm_vm_name` | required |
+| Owner | `create_vm_vm_owner` | tag |
+| Deployment | `create_vm_vm_deployment` | tag |
+| Purpose | `create_vm_vm_purpose` | tag, defaults to `demo` |
+| Environment | `create_vm_vm_environment` | `Dev` / `QA` / `Prod` |
+| Blueprint | `vm_blueprint` | required |
+| Subnet | `create_vm_aws_vpc_subnet_name` | a **name**, looked up to an id |
+| Security Group | `create_vm_aws_securitygroup_name` | a **name** |
+| SSH Keypair | `create_vm_aws_keypair_name` | required |
+| AWS Instance Type | `create_vm_aws_instance_size` | blank → blueprint |
+| AWS Image Filter | `create_vm_aws_image_filter` | blank → blueprint |
+
+AMI discovery uses `ec2_ami_info` filtered by name/owner/architecture and sorted by
+`creation_date`, as APD does — not an SSM lookup, which would ignore the survey's image
+filter and cannot resolve RHEL images.
+
+Tags match APD exactly (`Name`, `blueprint`, `environment`, `deployment`, `owner`,
+`purpose`, `managed-by`, `apd`) plus `snow_incident`, so APD's dynamic inventory, VPC
+report and teardown all see these instances.
+
+`set_stats` publishes APD's `priv_network_private_ip` and `public_ip` alongside this
+repo's `ec2_*` artifacts.
+
+**Blueprints** live in [`vars/demo.yml`](../../vars/demo.yml) as a small table rather than
+copies of APD's blueprint files — only the four AWS fields matter here, and APD's files
+carry Azure variables too. Windows blueprints are deliberately absent: Phase 3 patches
+with `dnf`, so the playbook rejects them up front rather than provisioning successfully
+and collapsing two nodes later.
 
 The ticket update goes through `include_role: snow_ticket, tasks_from: note` rather than
 calling `servicenow.itsm.incident` directly — that is
@@ -31,17 +68,18 @@ export SN_HOST=… SN_USERNAME=… SN_PASSWORD=…
 export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…
 
 ansible-playbook playbooks/provision_ec2.yml \
-  -e ec2_name=web-demo-01 \
-  -e ec2_instance_type=t3.micro \
-  -e ec2_region=us-east-1 \
-  -e ec2_key_name=my-demo-key \
-  -e ec2_subnet_id=subnet-0123456789abcdef0 \
-  -e ec2_security_group=sg-0123456789abcdef0 \
+  -e create_vm_aws_region=us-east-2 \
+  -e create_vm_vm_name=web-demo-01 \
+  -e vm_blueprint=al2023 \
+  -e create_vm_aws_vpc_subnet_name=aws-test-subnet \
+  -e create_vm_aws_securitygroup_name=aws-test-sg \
+  -e create_vm_aws_keypair_name=aws-test-key \
   -e snow_sys_id=<from phase 1> \
   -e snow_number=<from phase 1>
 ```
 
-Add `-e ec2_ami_id=ami-…` to pin an AMI and skip the SSM lookup.
+Add `-e create_vm_aws_instance_ami=ami-…` to pin an AMI and skip discovery, or
+`-e create_vm_aws_subnet_id=subnet-…` to skip the subnet lookup.
 
 `boto3` and `botocore` must be present in whatever Python runs the modules. They ship in
 the AAP execution environment; locally, `pip install boto3`.
@@ -58,36 +96,41 @@ Verified locally without AWS credentials or `boto3`:
 - `ansible-lint` passes at the **production** profile; `yamllint` clean. Lint's `args`
   rule validates every `amazon.aws.ec2_instance` parameter against the installed
   argspec, so the parameter names are known-good.
-- Both AMI branches behave: `ec2_ami_id` pins and skips the lookup; without it the SSM
-  lookup runs.
+- Variable parity with the live APD survey checked programmatically against
+  `common/setup.yml` — all twelve present.
+- Blueprint fallback asserted for every blueprint, for survey overrides, and for the
+  blank-string case AAP actually sends for an untouched optional field.
+- Empty `image_owners` (al2023) is dropped from the module call rather than leaking an
+  `omit` placeholder.
 - The missing-artifact guard fires with a usable message when `snow_sys_id` /
   `snow_number` are absent.
 - Post-launch templating was unit-tested against a realistic `ec2_instance` return and
   against a degraded one (private subnet, no `public_ip_address`, no `cpu_options`) —
   both render, and `ci_payload` contains no `omit` placeholder.
 
-**Not yet verified:** anything requiring live AWS — that the instance actually launches,
-that the SSM parameter resolves in the target region, and that `state: started` returns
+**Not yet verified:** anything requiring live AWS — that the instance launches, that the
+subnet and AMI lookups resolve against the APD stack, and that `state: started` returns
 in a sensible time.
 
 ## Watch for
 
-- **The SSM lookup is `amazon.aws.ssm_parameter`, not `amazon.aws.aws_ssm`.** The latter
-  is a deprecated alias that still redirects, and most examples online (including the
-  collection's own) still use it. Use the canonical name.
-- Resolve the AMI by SSM parameter. Hard-coded AMI IDs are region-specific and go stale —
-  this is the single most common reason a cloud demo breaks three weeks later.
+- **Subnet and security group are names, not ids.** The APD survey supplies
+  `aws-test-subnet` / `aws-test-sg`. The subnet is resolved to an id with
+  `ec2_vpc_subnet_info`; `security_group` accepts a name directly.
+- **Never hard-code an AMI id.** They are region-specific and go stale — the single most
+  common reason a cloud demo breaks three weeks later. Discovery picks the newest image
+  matching the blueprint's filter.
 - **`state: started`, not `running`.** `running` returns as soon as the instance is in the
   running state; `started` additionally waits for EC2 status checks to pass, which is a
   much better handoff to Phase 3. It is still *not* SSH-ready — status checks passing
   says nothing about sshd or key provisioning, so Phase 3 still needs
   `wait_for_connection`.
 - **Idempotency has a sharp edge.** `ec2_instance` decides whether an instance already
-  exists by filtering on Name tag, **base AMI**, state and subnet. The SSM lookup returns
-  whatever the latest AL2023 AMI is *today*, so once Amazon publishes a new one, a re-run
-  no longer matches the existing instance and launches a **second** one. The
-  "expected 1 instance" assert catches this rather than letting it pass silently. Pin
-  `ec2_ami_id` across a rehearsal series if it becomes annoying.
+  exists by filtering on Name tag, **base AMI**, state and subnet. AMI discovery returns
+  whatever is newest *today*, so once a new image is published a re-run no longer matches
+  and launches a **second** instance. The "expected 1 instance" assert catches this
+  rather than letting it pass silently. Pin `create_vm_aws_instance_ami` across a
+  rehearsal series if it becomes annoying.
 - **`purge_tags` defaults to `true`.** Because the playbook sets `tags`, any tag added
   out-of-band to the instance is removed on the next run.
 - Put instance details in `description`/`work_notes` for the MVP. Custom `u_` fields look

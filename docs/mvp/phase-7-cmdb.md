@@ -21,7 +21,7 @@ CMDB feeds the *next* run's inventory — which is the moment the loop visibly c
    ```yaml
    - name: Register the instance as a CI
      servicenow.itsm.configuration_item:
-       name: "{{ ec2_name }}"
+       name: "{{ create_vm_vm_name }}"
        sys_class_name: cmdb_ci_linux_server    # see note on CI class below
        ip_address: "{{ ci_payload.ip_address }}"
        environment: "{{ ci_payload.environment }}"

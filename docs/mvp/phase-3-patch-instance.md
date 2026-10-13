@@ -65,7 +65,7 @@ Patch the instance that was just provisioned, and have the ticket narrate it.
         sys_id: "{{ snow_sys_id }}"
         other:
           work_notes: |
-            Patching complete on {{ ec2_name }} ({{ ec2_instance_id }}).
+            Patching complete on {{ create_vm_vm_name }} ({{ ec2_instance_id }}).
               Packages updated: {{ patch.results | default([]) | length }}
               Reboot required:  {{ 'yes' if restart_check.rc != 0 else 'no' }}
       delegate_to: localhost

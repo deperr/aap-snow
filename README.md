@@ -79,10 +79,13 @@ export SN_USERNAME='aap.integration'
 export SN_PASSWORD='…'
 
 ansible-playbook playbooks/snow_open_ticket.yml \
-  -e ec2_name=web-demo-01 \
-  -e ec2_instance_type=t3.micro \
-  -e ec2_region=us-east-1
+  -e create_vm_vm_name=web-demo-01 \
+  -e create_vm_aws_region=us-east-2 \
+  -e vm_blueprint=al2023
 ```
+
+Variable names match the Ansible Product Demos **"Cloud | AWS | Create VM"** survey, so
+that survey drives these job templates unchanged.
 
 Credentials are read from the environment by the `servicenow.itsm` modules. In AAP they
 come from the ServiceNow credential instead — nothing in this repo reads a secrets file,

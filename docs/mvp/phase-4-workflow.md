@@ -19,8 +19,8 @@ One launch, one ticket, one instance — the whole story in a single workflow jo
 | 5 | `snow-close-ticket` | 4, on success |
 | E | `snow-escalate` | 2, 3 **and** 4, on failure |
 
-Add a survey on the workflow: `ec2_name`, `ec2_instance_type` (choice list:
-`t3.micro`/`t3.small`), `ec2_env`. Node 4 reboots only `when: reboot_required | bool`, then
+Attach the APD **"Cloud | AWS | Create VM"** survey to the workflow — the playbooks use
+its variable names, so it drops in unchanged. Node 4 reboots only `when: reboot_required | bool`, then
 re-runs `wait_for_connection` and a trivial health check.
 
 `snow-escalate` is built in [Phase 5](phase-5-failure-and-teardown.md); until then, leave
@@ -54,7 +54,7 @@ Reached only on success, so it needs no conditional:
   vars:
     snow_ticket_close_notes: |
       Provisioned and patched by AAP.
-        Instance:  {{ ec2_name }} / {{ ec2_instance_id }}
+        Instance:  {{ create_vm_vm_name }} / {{ ec2_instance_id }}
         Patched:   {{ patch_count | default(0) }} packages
         Rebooted:  {{ 'yes' if reboot_required | default(false) | bool else 'no' }}
         AAP job:   {{ aap_job_url | default('n/a') }}
@@ -75,8 +75,8 @@ resolved — and a running, patched instance tagged with that ticket number.
 - If the survey exposes `snow_sys_id`, make it optional and blank by default — otherwise
   [decision 1](architecture.md#1-make-node-1-skippable) silently inverts and node 1 stops
   creating tickets.
-- Survey answers are launch-time extra vars for the **whole workflow**, so `ec2_name`,
-  `ec2_instance_type` and `ec2_region` reach every node automatically. Only *discovered*
+- Survey answers are launch-time extra vars for the **whole workflow**, so `create_vm_vm_name`,
+  `create_vm_aws_instance_size` and `create_vm_aws_region` reach every node automatically. Only *discovered*
   values (instance id, IP, patch counts) need `set_stats`.
 
 ---

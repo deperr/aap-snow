@@ -4,8 +4,13 @@
 # Opens the ServiceNow ticket for an EC2 provisioning run and publishes its identity as
 # a workflow artifact. Every downstream node reads snow_sys_id from that artifact.
 #
-# Required extra vars: ec2_name, ec2_instance_type, ec2_region
-# Optional extra vars: ec2_env, snow_ticket_caller, snow_sys_id
+# Variables match the Ansible Product Demos "Cloud | AWS | Create VM" survey, so the
+# same survey drives this template and provision_ec2.yml.
+#
+# Required:  create_vm_vm_name, create_vm_aws_region, vm_blueprint
+# Optional:  create_vm_vm_owner, create_vm_vm_environment, create_vm_vm_purpose,
+#            create_vm_vm_deployment, create_vm_aws_instance_size,
+#            snow_ticket_caller, snow_sys_id
 
 - name: Open the provisioning ticket
   hosts: localhost
@@ -19,27 +24,40 @@
     - name: Validate the request
       ansible.builtin.assert:
         that:
-          - ec2_name | default("") | length > 0
-          - ec2_instance_type | default("") | length > 0
-          - ec2_region | default("") | length > 0
+          - create_vm_vm_name | default("", true) | length > 0
+          - create_vm_aws_region | default("", true) | length > 0
+          - vm_blueprint | default("", true) | length > 0
         fail_msg: >-
-          This playbook needs ec2_name, ec2_instance_type and ec2_region. In AAP these
-          come from the workflow survey; locally pass them with -e.
+          This playbook needs create_vm_vm_name, create_vm_aws_region and
+          vm_blueprint. In AAP these come from the APD
+          "Cloud | AWS | Create VM" survey; locally pass them with -e.
         quiet: true
 
   tasks:
+    # Instance size is optional in the survey — blank means "use the blueprint", so
+    # resolve it here too rather than writing an empty field onto the ticket.
+    - name: Resolve the instance size for the ticket text
+      ansible.builtin.set_fact:
+        snow_ticket_instance_size: >-
+          {{ create_vm_aws_instance_size | default('', true)
+             or create_vm_blueprints[vm_blueprint].instance_size | default('(from blueprint)') }}
+
     - name: Open (or adopt) the ticket
       ansible.builtin.include_role:
         name: snow_ticket
         tasks_from: open
       vars:
-        snow_ticket_short_description: "Provision & patch EC2 instance: {{ ec2_name }}"
+        snow_ticket_short_description: "Provision & patch EC2 instance: {{ create_vm_vm_name }}"
         snow_ticket_description: |
           Requested via Ansible Automation Platform.
-            Hostname:      {{ ec2_name }}
-            Instance type: {{ ec2_instance_type }}
-            Region:        {{ ec2_region }}
-            Environment:   {{ ec2_env }}
+            Hostname:      {{ create_vm_vm_name }}
+            Blueprint:     {{ vm_blueprint }}
+            Instance type: {{ snow_ticket_instance_size }}
+            Region:        {{ create_vm_aws_region }}
+            Environment:   {{ create_vm_vm_environment }}
+            Owner:         {{ create_vm_vm_owner }}
+            Purpose:       {{ create_vm_vm_purpose }}
+            Deployment:    {{ create_vm_vm_deployment }}
             AAP job:       {{ awx_job_id | default('local run') }}
         snow_ticket_opening_note: >-
           Request received. Provisioning started by AAP job
@@ -55,7 +73,7 @@
     - name: Summarise
       ansible.builtin.debug:
         msg:
-          - "Ticket:     {{ snow_ticket_number }}"
-          - "sys_id:     {{ snow_ticket_sys_id }}"
-          - "Instance:   {{ ec2_name }} ({{ ec2_instance_type }}, {{ ec2_region }})"
+          - "Ticket:    {{ snow_ticket_number }}"
+          - "sys_id:    {{ snow_ticket_sys_id }}"
+          - "Instance:  {{ create_vm_vm_name }} ({{ snow_ticket_instance_size }}, {{ create_vm_aws_region }})"
           - "Artifacts published — downstream nodes will read snow_sys_id."

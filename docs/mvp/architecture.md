@@ -8,7 +8,7 @@ Edge labels are the `set_stats` artifacts each node publishes to the ones after 
 
 ```mermaid
 flowchart TD
-    L(["Launch — survey<br/><small>ec2_name · ec2_instance_type · ec2_region · ec2_env</small>"])
+    L(["Launch — APD &quot;Cloud | AWS | Create VM&quot; survey<br/><small>name · blueprint · region · subnet · security group · keypair</small>"])
 
     subgraph WF["AAP workflow: Provision &amp; Patch EC2"]
         direction TB
@@ -46,8 +46,8 @@ flowchart TD
     class L,SN,AWS ext
 ```
 
-Survey answers are launch-time extra vars for the whole workflow, so `ec2_name`,
-`ec2_instance_type` and `ec2_region` reach every node without being republished. Only
+Survey answers are launch-time extra vars for the whole workflow, so `create_vm_vm_name`,
+`create_vm_aws_instance_size` and `create_vm_aws_region` reach every node without being republished. Only
 *discovered* values travel as artifacts — which is why the edge labels above contain no
 survey fields.
 
@@ -115,11 +115,11 @@ an artifact. [Phase 7](phase-7-cmdb.md) then only has to add the API call:
   ansible.builtin.set_stats:
     data:
       ci_payload:
-        name: "{{ ec2_name }}"
+        name: "{{ create_vm_vm_name }}"
         ip_address: "{{ ec2_facts.private_ip_address | default('') }}"
         object_id: "{{ ec2_facts.instance_id }}"           # AWS instance ID
         cpu_count: "{{ ec2_facts.cpu_options.core_count | default('') }}"
-        environment: "{{ ec2_env }}"
+        environment: "{{ create_vm_vm_environment }}"
         os: "Linux"
     per_host: false
 ```
