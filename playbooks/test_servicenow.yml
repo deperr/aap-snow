@@ -140,7 +140,7 @@
                 - AMI:           ami-0abcdef1234567890
                 - Private IP:    10.0.1.47
                 - Public IP:     3.142.59.26
-                Instance tagged with snow_incident={{ snow_created.record.number }}.
+                - Instance tagged with snow_incident={{ snow_created.record.number }}.
 
         - name: 5/7 — Post the Phase 3 patch summary (compact, no alignment padding)
           servicenow.itsm.incident:  # noqa: args[module]
