@@ -92,8 +92,21 @@ ansible-playbook playbooks/provision_ec2.yml \
   -e snow_number=<from phase 1>
 ```
 
-Add `-e create_vm_aws_instance_ami=ami-…` to pin an AMI and skip discovery, or
-`-e create_vm_aws_subnet_id=subnet-…` to skip the subnet lookup.
+### Pinning the AMI
+
+Set `create_vm_aws_instance_ami` and the whole discovery sequence — the `ec2_ami_info`
+call, the match report, the assert and the sort — is skipped. Nothing else to change.
+
+Worth doing for a rehearsal window: it removes the largest AWS call in the run, which
+is the one that can stall an AAP job while the controller serialises its result. The
+cost is that AMI ids are region-specific and go stale, so unpin it afterwards.
+
+A **blank** value means "not pinned" and discovery still runs. That matters because AAP
+sends an empty string for an untouched optional survey field, and the resolved id is
+held in a separate variable (`ec2_ami_id`) rather than the input — `set_fact` loses to
+an extra var, so reusing the input name would make a blank one impossible to fill in.
+
+`-e create_vm_aws_subnet_id=subnet-…` similarly skips the subnet lookup.
 
 `boto3` and `botocore` must be present in whatever Python runs the modules. They ship in
 the AAP execution environment; locally, `pip install boto3`.

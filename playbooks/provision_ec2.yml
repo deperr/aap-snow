@@ -106,7 +106,18 @@
         create_vm_aws_subnet_id: "{{ create_vm_aws_subnet.subnets | map(attribute='id') | list | last }}"
       when: create_vm_aws_subnet_id is not defined
 
-    # This task returns thousands of images — Red Hat alone publishes well over a
+    # The resolved AMI gets its own name rather than reusing the
+    # create_vm_aws_instance_ami input. Two reasons:
+    #   - a blank value is "not pinned". `is not defined` would treat the empty string
+    #     AAP sends for an untouched optional survey field as a pin, skip discovery,
+    #     and hand the module an empty image_id.
+    #   - set_fact loses to an extra var, so "Save ami" below could never fill that
+    #     empty value in even if discovery did run.
+    - name: Start from the pinned AMI, if one was given
+      ansible.builtin.set_fact:
+        ec2_ami_id: "{{ create_vm_aws_instance_ami | default('', true) }}"
+
+    # The next task returns thousands of images — Red Hat alone publishes well over a
     # thousand RHEL-9 AMIs per region. The Jinja sort below handles that fine (30k
     # images sort in ~7s), but AAP has to serialise the whole result into its job-event
     # stream, and a 20MB+ event can stall the job for minutes. It looks like a hang on
@@ -124,14 +135,14 @@
           state: available
       register: create_vm_vm_amis
       no_log: true
-      when: create_vm_aws_instance_ami is not defined
+      when: ec2_ami_id | length == 0
 
     - name: Report how many images matched
       ansible.builtin.debug:
         msg: >-
           {{ create_vm_vm_amis.images | default([]) | length }} image(s) matched
           '{{ create_vm_aws_image_filter }}' from owner {{ create_vm_aws_image_owners }}.
-      when: create_vm_aws_instance_ami is not defined
+      when: ec2_ami_id | length == 0
 
     - name: Confirm the image filter matched something sortable
       ansible.builtin.assert:
@@ -146,24 +157,24 @@
           0 have a creation_date. Check the blueprint, or pass
           create_vm_aws_instance_ami directly to skip this lookup.
         quiet: true
-      when: create_vm_aws_instance_ami is not defined
+      when: ec2_ami_id | length == 0
 
     # selectattr is not optional: a single AMI without a creation_date makes
     # sort(attribute='creation_date') fail for the whole list, and the resulting
     # "Error while resolving value" says nothing about which image caused it.
     - name: Save ami
       ansible.builtin.set_fact:
-        create_vm_aws_instance_ami: >-
+        ec2_ami_id: >-
           {{ (create_vm_vm_amis.images | selectattr('creation_date', 'defined')
               | sort(attribute='creation_date') | last).image_id }}
-      when: create_vm_aws_instance_ami is not defined
+      when: ec2_ami_id | length == 0
 
     - name: Create instance
       amazon.aws.ec2_instance:
         name: "{{ create_vm_vm_name }}"
         region: "{{ create_vm_aws_region }}"
         instance_type: "{{ create_vm_aws_instance_size }}"
-        image_id: "{{ create_vm_aws_instance_ami | trim }}"
+        image_id: "{{ ec2_ami_id }}"
         key_name: "{{ create_vm_aws_keypair_name }}"
         vpc_subnet_id: "{{ create_vm_aws_subnet_id }}"
         security_group: "{{ create_vm_aws_securitygroup_name }}"
